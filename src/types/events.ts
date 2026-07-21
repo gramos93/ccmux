@@ -1,5 +1,6 @@
 import type { EnrichedSession } from "./session";
 import type { InvokeErrorKind, FinishedInvocationStatus } from "./invocation";
+import type { TaskInstance } from "../lib/task";
 
 /**
  * SSE event types
@@ -13,6 +14,9 @@ export type SSEEventType =
   | "sidebar_state"
   | "invocation_started"
   | "invocation_finished"
+  | "task_created"
+  | "task_updated"
+  | "task_removed"
   | "heartbeat";
 
 /**
@@ -46,6 +50,12 @@ export interface InitEvent extends BaseSSEEvent {
   sessions: EnrichedSession[];
   activePaneId: string | null;
   invocations: InvocationSnapshotEntry[];
+  /**
+   * Snapshot of current task instances so a (re)connecting client reconciles
+   * its task list without a separate request. Optional: an older daemon omits
+   * it and clients treat that as an empty snapshot.
+   */
+  tasks?: TaskInstance[];
 }
 
 /**
@@ -129,6 +139,31 @@ export interface InvocationFinishedEvent extends BaseSSEEvent {
 }
 
 /**
+ * Task created event - a task instance was persisted. Flat top-level fields
+ * like every other SSE event.
+ */
+export interface TaskCreatedEvent extends BaseSSEEvent {
+  type: "task_created";
+  task: TaskInstance;
+}
+
+/**
+ * Task updated event - a task instance's status (or fields) changed.
+ */
+export interface TaskUpdatedEvent extends BaseSSEEvent {
+  type: "task_updated";
+  task: TaskInstance;
+}
+
+/**
+ * Task removed event - a task instance was deleted.
+ */
+export interface TaskRemovedEvent extends BaseSSEEvent {
+  type: "task_removed";
+  id: string;
+}
+
+/**
  * Heartbeat event
  */
 export interface HeartbeatEvent extends BaseSSEEvent {
@@ -147,4 +182,7 @@ export type SSEEvent =
   | SidebarStateEvent
   | InvocationStartedEvent
   | InvocationFinishedEvent
+  | TaskCreatedEvent
+  | TaskUpdatedEvent
+  | TaskRemovedEvent
   | HeartbeatEvent;
