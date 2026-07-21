@@ -46,7 +46,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `bun run typecheck` passes
-- [ ] 7.2 `bun test` passes (new suites included)
-- [ ] 7.3 End-to-end smoke: with the daemon running, `POST /tasks` then `GET /tasks` returns it, `POST /tasks/{id}/status` updates it, `DELETE /tasks/{id}` removes it, and an SSE client observes `task_created`/`task_updated`/`task_removed` (curl the daemon on port 2269)
-- [ ] 7.4 Confirm no TUI renderer components changed (only `sse.ts` on the TUI side); no spawn/keymap files touched
+- [x] 7.1 `bun run typecheck` passes
+- [x] 7.2 `bun test` passes (new suites included)
+- [x] 7.3 End-to-end smoke: with the daemon running, `POST /tasks` then `GET /tasks` returns it, `POST /tasks/{id}/status` updates it, `DELETE /tasks/{id}` removes it, and an SSE client observes `task_created`/`task_updated`/`task_removed` (curl the daemon on port 2269)
+- [x] 7.4 Confirm no TUI renderer components changed (only `sse.ts` on the TUI side); no spawn/keymap files touched
