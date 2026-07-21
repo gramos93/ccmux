@@ -6,11 +6,11 @@
 
 ## 2. Task launcher (`src/daemon/task-launcher.ts`)
 
-- [ ] 2.1 Pure `buildTaskCommand(task, agentBinary)`: agent binary + single-quote-escaped `--prompt '<prompt>'` (reuse the `handleSpawn` escaping idiom)
-- [ ] 2.2 Define `TaskLauncherDeps` = `{ getAgentByType, spawn, prefs }` and `launchTask(task, deps): Promise<{ paneId?: string }>`
-- [ ] 2.3 `new-window`/`split`: `tmux new-window|split-window -c <cwd> -P -F '#{pane_id}'`, capture pane id, `send-keys` the command, return `{ paneId }`
-- [ ] 2.4 `send-to-existing`: require `targetRef`; `send-keys` the prompt into it; return `{}` (no created pane)
-- [ ] 2.5 Reject `new-session` (and any unknown target) with a clear error
+- [x] 2.1 Pure `buildTaskCommand(task, agentBinary)`: agent binary + single-quote-escaped `--prompt '<prompt>'` (reuse the `handleSpawn` escaping idiom)
+- [x] 2.2 Define `TaskLauncherDeps` = `{ getAgentByType, spawn, prefs }` and `launchTask(task, deps): Promise<{ paneId?: string }>`
+- [x] 2.3 `new-window`/`split`: `tmux new-window|split-window -c <cwd> -P -F '#{pane_id}'`, capture pane id, `send-keys` the command, return `{ paneId }`
+- [x] 2.4 `send-to-existing`: require `targetRef`; `send-keys` the prompt into it; return `{}` (no created pane)
+- [x] 2.5 Reject `new-session` (and any unknown target) with a clear error
 
 ## 3. TaskManager.run + correlation (`src/daemon/task-manager.ts`)
 
