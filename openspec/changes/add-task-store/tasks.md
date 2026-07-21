@@ -1,9 +1,9 @@
 ## 1. Task data model (`src/lib/task.ts`)
 
-- [ ] 1.1 Define `TaskTarget` (`"new-window" | "split" | "send-to-existing"`) and `TaskStatus` (`"pending" | "running" | "done" | "failed"`) union types
-- [ ] 1.2 Define shared `TaskSpec` field set: `project`, `target`, `agent`, `prompt`, optional `targetRef: string` (pane/session id for `split`/`send-to-existing`), optional `worktree: boolean | { branch?: string; base?: string }` (a slash-command, if any, lives inside `prompt` — no separate field)
-- [ ] 1.3 Define `TaskTemplate = Partial<TaskSpec>` and `TaskInstance = TaskSpec & { id; createdAt; updatedAt; status }`
-- [ ] 1.4 Add a `validateNewTask` helper that rejects the reserved `new-session` target and unknown `status` values
+- [x] 1.1 Define `TaskTarget` (`"new-window" | "split" | "send-to-existing"`) and `TaskStatus` (`"pending" | "running" | "done" | "failed"`) union types
+- [x] 1.2 Define shared `TaskSpec` field set: `project`, `target`, `agent`, `prompt`, optional `targetRef: string` (pane/session id for `split`/`send-to-existing`), optional `worktree: boolean | { branch?: string; base?: string }` (a slash-command, if any, lives inside `prompt` — no separate field)
+- [x] 1.3 Define `TaskTemplate = Partial<TaskSpec>` and `TaskInstance = TaskSpec & { id; createdAt; updatedAt; status }`
+- [x] 1.4 Add a `validateNewTask` helper that rejects the reserved `new-session` target and unknown `status` values
 
 ## 2. State home resolution (`src/lib/config.ts`)
 
