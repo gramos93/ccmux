@@ -7,12 +7,12 @@
 
 ## 2. Task lifecycle manager (`src/daemon/task-manager.ts`)
 
-- [ ] 2.1 Define `TaskManagerEvent` = `{ kind: "created" | "updated"; task: TaskInstance } | { kind: "removed"; id: string }`
-- [ ] 2.2 `class TaskManager extends EventEmitter` with `list()`, `get(id)`, delegating to the store
-- [ ] 2.3 `create(body)`: load `getPreferences()`, `resolveTask({defaults,projects,templates}, {project, template, input})`, `createTask(resolved)`, emit `{kind:"created", task}`
-- [ ] 2.4 `updateStatus(id, status)`: `updateTaskStatus`; emit `{kind:"updated", task}` when it returns an instance; return undefined when absent (no emit)
-- [ ] 2.5 `delete(id)`: `deleteTask(id)`; emit `{kind:"removed", id}`
-- [ ] 2.6 Add a `safeEmit` wrapper (try/catch around `this.emit("change", event)`) mirroring `InvocationManager.safeEmit`
+- [x] 2.1 Define `TaskManagerEvent` = `{ kind: "created" | "updated"; task: TaskInstance } | { kind: "removed"; id: string }`
+- [x] 2.2 `class TaskManager extends EventEmitter` with `list()`, `get(id)`, delegating to the store
+- [x] 2.3 `create(body)`: load `getPreferences()`, `resolveTask({defaults,projects,templates}, {project, template, input})`, `createTask(resolved)`, emit `{kind:"created", task}`
+- [x] 2.4 `updateStatus(id, status)`: `updateTaskStatus`; emit `{kind:"updated", task}` when it returns an instance; return undefined when absent (no emit)
+- [x] 2.5 `delete(id)`: `deleteTask(id)`; emit `{kind:"removed", id}`
+- [x] 2.6 Add a `safeEmit` wrapper (try/catch around `this.emit("change", event)`) mirroring `InvocationManager.safeEmit`
 
 ## 3. HTTP routes + manager→SSE mapper (`src/daemon/server.ts`)
 
