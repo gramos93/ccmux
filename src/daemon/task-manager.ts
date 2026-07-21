@@ -17,6 +17,7 @@ import {
   deleteTask,
   getTask,
   listTasks,
+  patchTask,
   updateTaskStatus,
 } from "../lib/task-store";
 import {
@@ -25,6 +26,7 @@ import {
   type TaskSpec,
   type TaskStatus,
 } from "../lib/task";
+import type { LaunchResult } from "./task-launcher";
 
 /** Discriminated lifecycle event emitted on `"change"` after each mutation. */
 export type TaskManagerEvent =
@@ -38,7 +40,27 @@ export type CreateTaskBody = { project: string; template?: string } & Partial<
   Omit<TaskSpec, "project">
 >;
 
+/** Launches a task into a pane; injected so `run` is testable without tmux. */
+export type TaskLaunchFn = (task: TaskInstance) => Promise<LaunchResult>;
+
 export class TaskManager extends EventEmitter {
+  private launch: TaskLaunchFn;
+  /**
+   * paneId → taskId for tasks launched-but-not-yet-correlated. Drained on the
+   * first matching session event so the hot session path is a `Map.get`, never
+   * a store scan.
+   */
+  private pendingCorrelation = new Map<string, string>();
+
+  constructor(deps: { launch?: TaskLaunchFn } = {}) {
+    super();
+    this.launch =
+      deps.launch ??
+      (() => {
+        throw new Error("TaskManager: launcher not configured");
+      });
+  }
+
   /** All persisted task instances. */
   list(): Promise<TaskInstance[]> {
     return listTasks();
@@ -89,6 +111,53 @@ export class TaskManager extends EventEmitter {
   async delete(id: string): Promise<void> {
     await deleteTask(id);
     this.safeEmit({ kind: "removed", id });
+  }
+
+  /**
+   * Launch a task into a pane per its target, record the created pane id (for
+   * `new-window`/`split`), set status `running`, and register the pane for
+   * session correlation. Returns the updated instance, or undefined when the
+   * task does not exist. Propagates the launcher's error (unsupported target,
+   * missing `targetRef`, tmux failure) for the caller to map to `400`.
+   */
+  async run(id: string): Promise<TaskInstance | undefined> {
+    const task = await this.get(id);
+    if (!task) return undefined;
+
+    const result = await this.launch(task);
+
+    const updated = await patchTask(id, {
+      status: "running",
+      ...(result.paneId ? { paneId: result.paneId } : {}),
+    });
+    if (!updated) return undefined;
+
+    // Register the pane whose session we await. For created panes that's the
+    // new pane id; for send-to-existing it's the referenced pane (its session
+    // links on that pane's next event).
+    const correlationPane = result.paneId ?? task.targetRef;
+    if (correlationPane) this.pendingCorrelation.set(correlationPane, id);
+
+    this.safeEmit({ kind: "updated", task: updated });
+    return updated;
+  }
+
+  /**
+   * Link a session to a launched task when the session binds the pane the task
+   * was launched into. Drains the pending entry on first match. No-op when the
+   * pane matches no launched task. Called off the session-event path (see
+   * `backfillTaskLink`), so the common case is a single `Map.get`.
+   */
+  async correlateSession(
+    paneId: string | null,
+    sessionId: string,
+  ): Promise<void> {
+    if (!paneId) return;
+    const taskId = this.pendingCorrelation.get(paneId);
+    if (!taskId) return;
+    this.pendingCorrelation.delete(paneId);
+    const updated = await patchTask(taskId, { sessionId });
+    if (updated) this.safeEmit({ kind: "updated", task: updated });
   }
 
   /**

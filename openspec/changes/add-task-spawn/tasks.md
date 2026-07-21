@@ -14,11 +14,11 @@
 
 ## 3. TaskManager.run + correlation (`src/daemon/task-manager.ts`)
 
-- [ ] 3.1 Add an injected launcher dep (constructor option, default = the real `launchTask` bound to real deps); keep `new TaskManager()` working
-- [ ] 3.2 Add `pendingCorrelation: Map<string, string>` (paneId → taskId)
-- [ ] 3.3 `run(id)`: get task (undefined → caller maps 404); call the launcher; on a created pane record `paneId` via `patchTask` and add to `pendingCorrelation`; set status `running`; emit `updated`
-- [ ] 3.4 `run` for `send-to-existing`: after launch, correlate immediately against `targetRef` (see 3.5) rather than adding a pending entry
-- [ ] 3.5 `correlateSession(paneId, sessionId)`: if `paneId` is in `pendingCorrelation`, `patchTask(taskId, { sessionId })`, delete the entry, emit `updated`; no-op otherwise
+- [x] 3.1 Add an injected launcher dep (constructor option, default = the real `launchTask` bound to real deps); keep `new TaskManager()` working
+- [x] 3.2 Add `pendingCorrelation: Map<string, string>` (paneId → taskId)
+- [x] 3.3 `run(id)`: get task (undefined → caller maps 404); call the launcher; on a created pane record `paneId` via `patchTask` and add to `pendingCorrelation`; set status `running`; emit `updated`
+- [x] 3.4 `run` for `send-to-existing`: after launch, correlate immediately against `targetRef` (see 3.5) rather than adding a pending entry
+- [x] 3.5 `correlateSession(paneId, sessionId)`: if `paneId` is in `pendingCorrelation`, `patchTask(taskId, { sessionId })`, delete the entry, emit `updated`; no-op otherwise
 
 ## 4. Server route + backfill (`src/daemon/server.ts`)
 
