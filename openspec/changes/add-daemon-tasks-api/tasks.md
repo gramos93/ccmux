@@ -28,8 +28,8 @@
 
 ## 4. SSE consumer (`src/tui/utils/sse.ts`)
 
-- [ ] 4.1 Add `onTaskCreated?`, `onTaskUpdated?`, `onTaskRemoved?` to `SSECallbacks`
-- [ ] 4.2 Add `case "task_created"/"task_updated"/"task_removed"` arms to `dispatchSSEEvent`
+- [x] 4.1 Add `onTaskCreated?`, `onTaskUpdated?`, `onTaskRemoved?` to `SSECallbacks`
+- [x] 4.2 Add `case "task_created"/"task_updated"/"task_removed"` arms to `dispatchSSEEvent`
 
 ## 5. Wiring (`src/daemon/index.ts`)
 

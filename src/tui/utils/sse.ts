@@ -6,6 +6,7 @@ import type {
   InvocationFinishedEvent,
   InvocationSnapshotEntry,
 } from "../../types";
+import type { TaskInstance } from "../../lib/task";
 
 /**
  * Connection state for the SSE client
@@ -35,6 +36,9 @@ export interface SSECallbacks {
   ) => void;
   onInvocationStarted?: (event: InvocationStartedEvent) => void;
   onInvocationFinished?: (event: InvocationFinishedEvent) => void;
+  onTaskCreated?: (task: TaskInstance) => void;
+  onTaskUpdated?: (task: TaskInstance) => void;
+  onTaskRemoved?: (id: string) => void;
   onConnectionStateChange: (state: ConnectionState) => void;
   onError: (error: string) => void;
 }
@@ -84,6 +88,15 @@ export function dispatchSSEEvent(
       break;
     case "invocation_finished":
       callbacks.onInvocationFinished?.(event);
+      break;
+    case "task_created":
+      callbacks.onTaskCreated?.(event.task);
+      break;
+    case "task_updated":
+      callbacks.onTaskUpdated?.(event.task);
+      break;
+    case "task_removed":
+      callbacks.onTaskRemoved?.(event.id);
       break;
   }
 }
