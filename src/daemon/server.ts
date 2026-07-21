@@ -722,6 +722,14 @@ export class DaemonServer {
       const id = path.slice("/tasks/".length, -"/status".length);
       return await this.handleUpdateTaskStatus(id, req, corsHeaders);
     }
+    if (
+      path.startsWith("/tasks/") &&
+      path.endsWith("/run") &&
+      req.method === "POST"
+    ) {
+      const id = path.slice("/tasks/".length, -"/run".length);
+      return await this.handleRunTask(id, corsHeaders);
+    }
     if (path.startsWith("/tasks/") && req.method === "GET") {
       const id = path.slice("/tasks/".length);
       return await this.handleGetTask(id, corsHeaders);
@@ -1000,6 +1008,29 @@ export class DaemonServer {
     // Idempotent: the store treats a missing file as a non-error.
     await this.taskManager.delete(id);
     return Response.json({ success: true }, { headers });
+  }
+
+  private async handleRunTask(
+    id: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    try {
+      const task = await this.taskManager.run(id);
+      if (!task) {
+        return Response.json(
+          { success: false, message: "Task not found" },
+          { status: 404, headers },
+        );
+      }
+      return Response.json({ success: true, task }, { headers });
+    } catch (err) {
+      // Launcher errors (unsupported target, missing targetRef, tmux failure)
+      // are caller mistakes or environment faults → 400.
+      return Response.json(
+        { success: false, message: (err as Error).message },
+        { status: 400, headers },
+      );
+    }
   }
 
   private async handleActivePaneNotification(
@@ -1664,7 +1695,20 @@ export class DaemonServer {
         session.tmuxPane,
       );
     }
+    // Same lifecycle hook back-fills the task→session link when a launched
+    // task's pane binds this session (see backfillTaskLink).
+    await this.backfillTaskLink(session);
     return enriched;
+  }
+
+  /**
+   * Correlate a launched task with the session that bound its pane. Mirrors
+   * `backfillInvocationLink`'s intent for tasks: idempotent, late-binding
+   * tolerant. The manager's pending pane→task index makes this a cheap
+   * `Map.get` for the common (no matching task) case.
+   */
+  private async backfillTaskLink(session: Readonly<Session>): Promise<void> {
+    await this.taskManager.correlateSession(session.tmuxPane, session.id);
   }
 
   private sendToClient(

@@ -22,9 +22,9 @@
 
 ## 4. Server route + backfill (`src/daemon/server.ts`)
 
-- [ ] 4.1 Add `POST /tasks/{id}/run` route (suffixed, before the generic `/tasks/{id}` routes)
-- [ ] 4.2 `handleRunTask`: 404 when the task is missing; 400 on `new-session`/missing `targetRef`/launch error; 200 `{ success: true, task }` on launch
-- [ ] 4.3 Add `backfillTaskLink(session)` calling `taskManager.correlateSession(session.tmuxPane, session.id)`; invoke it in `sessionEventToSSE` wherever `backfillInvocationLink` is called (visible created/updated)
+- [x] 4.1 Add `POST /tasks/{id}/run` route (suffixed, before the generic `/tasks/{id}` routes)
+- [x] 4.2 `handleRunTask`: 404 when the task is missing; 400 on `new-session`/missing `targetRef`/launch error; 200 `{ success: true, task }` on launch
+- [x] 4.3 Add `backfillTaskLink(session)` calling `taskManager.correlateSession(session.tmuxPane, session.id)`; invoke it in `sessionEventToSSE` wherever `backfillInvocationLink` is called (visible created/updated)
 
 ## 5. CLI (`src/commands/task.ts`)
 
