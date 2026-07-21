@@ -13,9 +13,9 @@
 
 ## 3. Config-side task surface (`src/lib/preferences.ts`)
 
-- [ ] 3.1 Import `TaskSpec` from `task.ts`; define `TaskDefaults = Partial<TaskSpec>` and `ProjectConfig` (per-project `Partial<TaskSpec>` overrides)
-- [ ] 3.2 Extend `Preferences` with optional `templates?: Record<string, TaskTemplate>`, `projects?: Record<string, ProjectConfig>`, `defaults?: TaskDefaults`
-- [ ] 3.3 Verify existing preference loading tolerates absence of all three new keys (no breakage)
+- [x] 3.1 Import `TaskSpec` from `task.ts`; define `TaskDefaults = Partial<TaskSpec>` and `ProjectConfig` (per-project `Partial<TaskSpec>` overrides)
+- [x] 3.2 Extend `Preferences` with optional `templates?: Record<string, TaskTemplate>`, `projects?: Record<string, ProjectConfig>`, `defaults?: TaskDefaults`
+- [x] 3.3 Verify existing preference loading tolerates absence of all three new keys (no breakage)
 
 ## 4. Default cascade resolver
 
