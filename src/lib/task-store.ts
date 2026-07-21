@@ -96,18 +96,30 @@ export async function createTask(spec: Partial<TaskSpec>): Promise<TaskInstance>
 }
 
 /**
+ * Merge a partial set of mutable instance fields into an existing task and
+ * refresh `updatedAt`. Single-file read-modify-write. Returns the updated
+ * instance, or undefined if it doesn't exist. All other fields are preserved.
+ */
+export async function patchTask(
+  id: string,
+  patch: Partial<Pick<TaskInstance, "status" | "paneId" | "sessionId">>,
+): Promise<TaskInstance | undefined> {
+  const task = await getTask(id);
+  if (!task) return undefined;
+  const updated: TaskInstance = { ...task, ...patch, updatedAt: now() };
+  await writeTask(updated);
+  return updated;
+}
+
+/**
  * Update an instance's status, refreshing `updatedAt`. Returns the updated
- * instance, or undefined if it doesn't exist.
+ * instance, or undefined if it doesn't exist. Thin wrapper over {@link patchTask}.
  */
 export async function updateTaskStatus(
   id: string,
   status: TaskStatus,
 ): Promise<TaskInstance | undefined> {
-  const task = await getTask(id);
-  if (!task) return undefined;
-  const updated: TaskInstance = { ...task, status, updatedAt: now() };
-  await writeTask(updated);
-  return updated;
+  return patchTask(id, { status });
 }
 
 /** Delete an instance. A missing file is not an error. */

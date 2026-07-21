@@ -78,6 +78,11 @@ export interface TaskInstance extends TaskSpec {
   createdAt: string;
   updatedAt: string;
   status: TaskStatus;
+  /** Correlation link fields, set post-launch (absent at creation). */
+  /** The tmux pane the task was launched into. */
+  paneId?: string;
+  /** The ccmux session correlated to this task by pane id. */
+  sessionId?: string;
 }
 
 /**
