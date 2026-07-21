@@ -38,11 +38,11 @@
 
 ## 6. Tests
 
-- [ ] 6.1 `task-manager.test.ts`: create/update/delete emit the correct discriminated `"change"` events; update-missing returns undefined and does not emit; a throwing subscriber does not break the mutation (use temp `$CCMUX_STATE_HOME` + injected clock)
-- [ ] 6.2 Manager create runs the cascade: template+defaults+input fold reflected in the persisted task; a resolved `new-session` target throws
-- [ ] 6.3 `taskEventToSSE` mapper: each `TaskManagerEvent` kind maps to the right SSE `type` with the right payload
-- [ ] 6.4 `dispatchSSEEvent` arms: `task_created`/`task_updated`/`task_removed` invoke the matching callback; unknown type is ignored (extend existing sse dispatch test)
-- [ ] 6.5 HTTP handler tests (or exercise handlers directly): list shape, get 404, create 400 on bad JSON, create 400 on `new-session`, status 400 on unknown status, status 404 on missing id, delete idempotent
+- [x] 6.1 `task-manager.test.ts`: create/update/delete emit the correct discriminated `"change"` events; update-missing returns undefined and does not emit; a throwing subscriber does not break the mutation (use temp `$CCMUX_STATE_HOME` + injected clock)
+- [x] 6.2 Manager create runs the cascade: template+defaults+input fold reflected in the persisted task; a resolved `new-session` target throws
+- [x] 6.3 `taskEventToSSE` mapper: each `TaskManagerEvent` kind maps to the right SSE `type` with the right payload
+- [x] 6.4 `dispatchSSEEvent` arms: `task_created`/`task_updated`/`task_removed` invoke the matching callback; unknown type is ignored (extend existing sse dispatch test)
+- [x] 6.5 HTTP handler tests (or exercise handlers directly): list shape, get 404, create 400 on bad JSON, create 400 on `new-session`, status 400 on unknown status, status 404 on missing id, delete idempotent
 
 ## 7. Verification
 

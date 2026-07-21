@@ -1,4 +1,13 @@
-import { describe, it, expect, spyOn, afterAll, mock } from "bun:test";
+import {
+  describe,
+  it,
+  expect,
+  spyOn,
+  afterAll,
+  afterEach,
+  beforeEach,
+  mock,
+} from "bun:test";
 import {
   DaemonServer,
   rejectCrossOriginBrowser,
@@ -15,6 +24,7 @@ import { AttentionTracker } from "./attention-tracker";
 import { InvocationManager } from "./invocation-manager";
 import { InvocationRegistry } from "./invokers/registry";
 import { TaskManager } from "./task-manager";
+import { setNowForTests } from "../lib/task-store";
 import { stubInvoker } from "./invokers/test-helpers";
 import type { HookAdapter } from "./hook-adapter";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
@@ -2433,5 +2443,117 @@ describe("POST /notification-action", () => {
       postBody({ sessionId: "s1", action: "approve" }),
     );
     expect(res.status).toBe(503);
+  });
+});
+
+describe("task HTTP endpoints", () => {
+  const savedStateHome = process.env.CCMUX_STATE_HOME;
+  let stateHome: string;
+
+  beforeEach(() => {
+    stateHome = mkdtempSync(join(tmpdir(), "ccmux-task-http-"));
+    process.env.CCMUX_STATE_HOME = stateHome;
+    setNowForTests(() => "2024-01-15T12:00:00Z");
+  });
+
+  afterEach(() => {
+    setNowForTests();
+    rmSync(stateHome, { recursive: true, force: true });
+    if (savedStateHome === undefined) delete process.env.CCMUX_STATE_HOME;
+    else process.env.CCMUX_STATE_HOME = savedStateHome;
+  });
+
+  const jsonPost = (path: string, body: unknown) =>
+    new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+
+  async function createOne(internals: ServerInternals): Promise<string> {
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", { project: "p", agent: "claude", prompt: "hi" }),
+    );
+    const json = (await res.json()) as { task: { id: string } };
+    return json.task.id;
+  }
+
+  it("POST then GET /tasks returns the created task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      new Request("http://localhost/tasks"),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { tasks: Array<{ id: string }> };
+    expect(json.tasks.map((t) => t.id)).toEqual([id]);
+  });
+
+  it("GET /tasks/{id} returns 404 for an unknown id", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      new Request("http://localhost/tasks/nope"),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks with malformed JSON returns 400", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(jsonPost("/tasks", "{ not json"));
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks resolving to new-session returns 400", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", {
+        project: "p",
+        agent: "claude",
+        prompt: "hi",
+        target: "new-session",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/{id}/status with an unknown status returns 400", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/status`, { status: "bogus" }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/{id}/status for a missing id returns 404", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks/nope/status", { status: "running" }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/status updates and broadcasts", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/status`, { status: "running" }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { task: { status: string } };
+    expect(json.task.status).toBe("running");
+  });
+
+  it("DELETE /tasks/{id} is idempotent", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const first = await internals.handleRequest(
+      new Request(`http://localhost/tasks/${id}`, { method: "DELETE" }),
+    );
+    expect(first.status).toBe(200);
+    const second = await internals.handleRequest(
+      new Request(`http://localhost/tasks/${id}`, { method: "DELETE" }),
+    );
+    expect(second.status).toBe(200);
   });
 });
