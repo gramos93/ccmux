@@ -7,9 +7,9 @@
 
 ## 2. State home resolution (`src/lib/config.ts`)
 
-- [ ] 2.1 Add `getStateHomePath()` reading `$CCMUX_STATE_HOME` at call time, defaulting to `~/.ccmux` (mirror the `getCcmuxDirPath()` pattern; do not reuse `$CCMUX_HOME`)
-- [ ] 2.2 Export a `TASKS_DIR` path helper resolving to `<stateHome>/tasks/`, and a `taskFilePath(id)` helper resolving to `<stateHome>/tasks/<id>.json`
-- [ ] 2.3 Confirm no existing config-dir constants (`STATE_FILE`, `PREFS_FILE`, `MARKERS_DIR`) are moved or renamed
+- [x] 2.1 Add `getStateHomePath()` reading `$CCMUX_STATE_HOME` at call time, defaulting to `~/.ccmux` (mirror the `getCcmuxDirPath()` pattern; do not reuse `$CCMUX_HOME`)
+- [x] 2.2 Export a `TASKS_DIR` path helper resolving to `<stateHome>/tasks/`, and a `taskFilePath(id)` helper resolving to `<stateHome>/tasks/<id>.json`
+- [x] 2.3 Confirm no existing config-dir constants (`STATE_FILE`, `PREFS_FILE`, `MARKERS_DIR`) are moved or renamed
 
 ## 3. Config-side task surface (`src/lib/preferences.ts`)
 
