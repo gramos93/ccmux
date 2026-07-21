@@ -34,11 +34,11 @@
 
 ## 6. Tests
 
-- [ ] 6.1 Store tests: create→list, get-by-id, update-status refreshes `updatedAt` to an exact injected-clock value, delete (`unlink`) removes, absent dir → empty, one malformed `<id>.json` skipped while valid ones list (use a temp `$CCMUX_STATE_HOME` + injected clock)
-- [ ] 6.2 Cascade tests: creation-input wins, project override beats global default, template fills gaps, no-config succeeds with built-in defaults
-- [ ] 6.3 Validation tests: `new-session` target rejected at create; config without task keys still loads
-- [ ] 6.4 Field-shape tests: `worktree: { branch, base }` round-trips through create→get; `targetRef` persisted for a `send-to-existing` task
-- [ ] 6.5 Isolation test: writing the task store leaves `~/.config/ccmux` files unchanged
+- [x] 6.1 Store tests: create→list, get-by-id, update-status refreshes `updatedAt` to an exact injected-clock value, delete (`unlink`) removes, absent dir → empty, one malformed `<id>.json` skipped while valid ones list (use a temp `$CCMUX_STATE_HOME` + injected clock)
+- [x] 6.2 Cascade tests: creation-input wins, project override beats global default, template fills gaps, no-config succeeds with built-in defaults
+- [x] 6.3 Validation tests: `new-session` target rejected at create; config without task keys still loads
+- [x] 6.4 Field-shape tests: `worktree: { branch, base }` round-trips through create→get; `targetRef` persisted for a `send-to-existing` task
+- [x] 6.5 Isolation test: writing the task store leaves `~/.config/ccmux` files unchanged
 
 ## 7. Verification
 
