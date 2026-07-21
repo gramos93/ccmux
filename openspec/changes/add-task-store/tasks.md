@@ -42,6 +42,6 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `bun run typecheck` passes
-- [ ] 7.2 `bun test` passes (new suites included)
-- [ ] 7.3 Confirm no daemon/TUI/tmux files were touched (diff review against non-goals)
+- [x] 7.1 `bun run typecheck` passes
+- [x] 7.2 `bun test` passes (new suites included)
+- [x] 7.3 Confirm no daemon/TUI/tmux files were touched (diff review against non-goals)
