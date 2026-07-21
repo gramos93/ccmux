@@ -41,7 +41,7 @@
 
 ## 7. Verification
 
-- [ ] 7.1 `bun run typecheck` passes
-- [ ] 7.2 `bun test` passes (new suites included)
-- [ ] 7.3 End-to-end smoke on an isolated daemon (temp `$CCMUX_HOME`/`$CCMUX_STATE_HOME`, `CCMUX_PORT`, inside a detached tmux session): `ccmux task create <proj> --agent claude --prompt '...' --run` (or curl `POST /tasks` then `/run`) creates a real pane, records `paneId`, and once a session binds, the task's `sessionId` is back-filled; an SSE client sees `task_updated`
-- [ ] 7.4 Confirm no TUI renderer components changed; worktree/keymap untouched; only the launch + correlation + CLI surface added
+- [x] 7.1 `bun run typecheck` passes
+- [x] 7.2 `bun test` passes (new suites included)
+- [x] 7.3 End-to-end smoke on an isolated daemon (temp `$CCMUX_HOME`/`$CCMUX_STATE_HOME`, `CCMUX_PORT`, inside a detached tmux session): `ccmux task create <proj> --agent claude --prompt '...' --run` (or curl `POST /tasks` then `/run`) creates a real pane, records `paneId`, and once a session binds, the task's `sessionId` is back-filled; an SSE client sees `task_updated`
+- [x] 7.4 Confirm no TUI renderer components changed; worktree/keymap untouched; only the launch + correlation + CLI surface added
