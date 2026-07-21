@@ -24,6 +24,7 @@ import { AttentionTracker } from "./attention-tracker";
 import { InvocationManager } from "./invocation-manager";
 import { InvocationRegistry } from "./invokers/registry";
 import { TaskManager } from "./task-manager";
+import { launchTask } from "./task-launcher";
 import { setNowForTests } from "../lib/task-store";
 import { stubInvoker } from "./invokers/test-helpers";
 import type { HookAdapter } from "./hook-adapter";
@@ -100,6 +101,8 @@ type ServerInternals = {
   ): Promise<Response>;
   handleSSE(): Response;
   invocationManager: InvocationManager;
+  taskManager: TaskManager;
+  backfillTaskLink(session: Session): Promise<void>;
   handleRequest(req: Request): Promise<Response>;
   getServerSocketPath(): Promise<string | null>;
 };
@@ -129,7 +132,23 @@ function createServer(
       stubInvoker("subprocess"),
     ),
   );
-  const taskManager = new TaskManager();
+  // Real launcher logic (target branching, targetRef checks) over a fake tmux
+  // runner, so run-route tests exercise validation without touching tmux.
+  const taskManager = new TaskManager({
+    launch: (task) =>
+      launchTask(task, {
+        getAgentByType: () => undefined,
+        runTmux: async (args) => ({
+          code: 0,
+          stdout:
+            args[0] === "new-window" || args[0] === "split-window"
+              ? "%stub\n"
+              : "",
+          stderr: "",
+        }),
+        prefs: {},
+      }),
+  });
   const resolveHookAdapter = getHookAdapter ?? ((_name: string) => null);
   const resolveAgent =
     agentLookup ??
@@ -2555,5 +2574,51 @@ describe("task HTTP endpoints", () => {
       new Request(`http://localhost/tasks/${id}`, { method: "DELETE" }),
     );
     expect(second.status).toBe(200);
+  });
+
+  it("POST /tasks/{id}/run launches a new-window task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/run`, {}),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { task: { status: string; paneId?: string } };
+    expect(json.task.status).toBe("running");
+    expect(json.task.paneId).toBe("%stub");
+  });
+
+  it("POST /tasks/{id}/run returns 404 for a missing task", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks/nope/run", {}),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/run returns 400 for send-to-existing without targetRef", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", {
+        project: "p",
+        agent: "claude",
+        prompt: "hi",
+        target: "send-to-existing",
+      }),
+    );
+    const id = ((await res.json()) as { task: { id: string } }).task.id;
+    const run = await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    expect(run.status).toBe(400);
+  });
+
+  it("backfillTaskLink links a task when a session binds its pane", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // pane %stub
+
+    await internals.backfillTaskLink({ id: "sess-1", tmuxPane: "%stub" } as Session);
+
+    const got = await internals.taskManager.get(id);
+    expect(got?.sessionId).toBe("sess-1");
   });
 });

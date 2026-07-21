@@ -106,6 +106,75 @@ describe("TaskManager lifecycle events", () => {
   });
 });
 
+describe("TaskManager.run + correlation", () => {
+  it("run records paneId + status running and emits updated", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
+    const created = await tm.create(body);
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    const ran = await tm.run(created.id);
+    expect(ran?.status).toBe("running");
+    expect(ran?.paneId).toBe("%42");
+    expect(events).toEqual([{ kind: "updated", task: ran! }]);
+  });
+
+  it("correlateSession links the pending pane and emits updated", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
+    const created = await tm.create(body);
+    await tm.run(created.id);
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    await tm.correlateSession("%42", "sess-9");
+    const linked = await tm.get(created.id);
+    expect(linked?.sessionId).toBe("sess-9");
+    expect(events).toEqual([{ kind: "updated", task: linked! }]);
+  });
+
+  it("correlateSession is a no-op for an unrelated pane", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
+    const created = await tm.create(body);
+    await tm.run(created.id);
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    await tm.correlateSession("%99", "sess-x");
+    expect(events).toHaveLength(0);
+    expect((await tm.get(created.id))?.sessionId).toBeUndefined();
+  });
+
+  it("correlateSession drains the pending entry (only links once)", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
+    const created = await tm.create(body);
+    await tm.run(created.id);
+
+    await tm.correlateSession("%42", "sess-a");
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+    await tm.correlateSession("%42", "sess-b"); // pane already drained
+    expect(events).toHaveLength(0);
+    expect((await tm.get(created.id))?.sessionId).toBe("sess-a");
+  });
+
+  it("run of a missing id returns undefined", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%1" }) });
+    expect(await tm.run("nope")).toBeUndefined();
+  });
+
+  it("send-to-existing registers targetRef for correlation", async () => {
+    const tm = new TaskManager({ launch: async () => ({}) });
+    const created = await tm.create({
+      ...body,
+      target: "send-to-existing",
+      targetRef: "%5",
+    });
+    await tm.run(created.id);
+    await tm.correlateSession("%5", "sess-t");
+    expect((await tm.get(created.id))?.sessionId).toBe("sess-t");
+  });
+});
+
 describe("taskEventToSSE mapper", () => {
   const task = {
     id: "t1",

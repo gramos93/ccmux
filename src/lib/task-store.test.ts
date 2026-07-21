@@ -8,6 +8,7 @@ import {
   deleteTask,
   getTask,
   listTasks,
+  patchTask,
   setNowForTests,
   updateTaskStatus,
 } from "./task-store";
@@ -118,6 +119,35 @@ describe("task-store field shapes", () => {
       targetRef: "%3",
     });
     expect((await getTask(created.id))?.targetRef).toBe("%3");
+  });
+});
+
+describe("task-store patchTask", () => {
+  it("merges fields, refreshes updatedAt, and preserves others", async () => {
+    const created = await createTask(spec);
+    setNowForTests(() => "2024-02-20T08:30:00Z");
+    const patched = await patchTask(created.id, {
+      paneId: "%7",
+      sessionId: "sess-1",
+    });
+    expect(patched?.paneId).toBe("%7");
+    expect(patched?.sessionId).toBe("sess-1");
+    expect(patched?.updatedAt).toBe("2024-02-20T08:30:00Z");
+    // Untouched fields preserved.
+    expect(patched?.agent).toBe(spec.agent);
+    expect(patched?.status).toBe("pending");
+    expect(patched?.createdAt).toBe("2024-01-15T12:00:00Z");
+  });
+
+  it("returns undefined and persists nothing for a missing id", async () => {
+    expect(await patchTask("nope", { sessionId: "x" })).toBeUndefined();
+    expect(await listTasks()).toEqual([]);
+  });
+
+  it("updateTaskStatus still works (regression)", async () => {
+    const created = await createTask(spec);
+    const updated = await updateTaskStatus(created.id, "running");
+    expect(updated?.status).toBe("running");
   });
 });
 

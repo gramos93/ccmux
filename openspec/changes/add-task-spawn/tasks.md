@@ -33,11 +33,11 @@
 
 ## 6. Tests
 
-- [ ] 6.1 Store: `patchTask` merges fields + refreshes `updatedAt` + preserves others; patch-missing → undefined; `updateTaskStatus` still works (regression)
-- [ ] 6.2 Launcher: `buildTaskCommand` escaping; `launchTask` new-window/split issues the right tmux args and returns the captured pane id (inject a fake spawn); `send-to-existing` requires `targetRef`; `new-session` rejected
-- [ ] 6.3 Manager: `run` records `paneId` + status `running` + emits `updated` (inject a fake launcher); `correlateSession` links a pending pane and emits `updated`; unrelated pane is a no-op; `run` of a missing id returns undefined
-- [ ] 6.4 Server: `POST /tasks/{id}/run` → 404 missing, 400 new-session, 400 send-to-existing without targetRef, 200 happy path (inject/stub launcher via the manager); `backfillTaskLink` links a task when a session event carries the matching pane
-- [ ] 6.5 CLI smoke (unit-level): `create --run` posts create then run; `list`/`rm` hit the right endpoints (can mock fetch or assert URL building)
+- [x] 6.1 Store: `patchTask` merges fields + refreshes `updatedAt` + preserves others; patch-missing → undefined; `updateTaskStatus` still works (regression)
+- [x] 6.2 Launcher: `buildTaskCommand` escaping; `launchTask` new-window/split issues the right tmux args and returns the captured pane id (inject a fake spawn); `send-to-existing` requires `targetRef`; `new-session` rejected
+- [x] 6.3 Manager: `run` records `paneId` + status `running` + emits `updated` (inject a fake launcher); `correlateSession` links a pending pane and emits `updated`; unrelated pane is a no-op; `run` of a missing id returns undefined
+- [x] 6.4 Server: `POST /tasks/{id}/run` → 404 missing, 400 new-session, 400 send-to-existing without targetRef, 200 happy path (inject/stub launcher via the manager); `backfillTaskLink` links a task when a session event carries the matching pane
+- [x] 6.5 CLI smoke (unit-level): `create --run` posts create then run; `list`/`rm` hit the right endpoints (can mock fetch or assert URL building)
 
 ## 7. Verification
 
