@@ -19,18 +19,18 @@
 
 ## 4. Default cascade resolver
 
-- [ ] 4.1 Implement pure `resolveTask(prefs, { project, template?, input })` folding `defaults → projects[project] → templates[template] → input`, later-wins per field, no I/O
-- [ ] 4.2 Apply built-in fallbacks (`target: "new-window"`, `status: "pending"`) only for fields still unset after the fold
-- [ ] 4.3 Reject when the resolved/created target is `new-session`
+- [x] 4.1 Implement pure `resolveTask(prefs, { project, template?, input })` folding `defaults → projects[project] → templates[template] → input`, later-wins per field, no I/O
+- [x] 4.2 Apply built-in fallbacks (`target: "new-window"`, `status: "pending"`) only for fields still unset after the fold
+- [x] 4.3 Reject when the resolved/created target is `new-session`
 
 ## 5. Task instance store (`src/lib/task-store.ts`)
 
-- [ ] 5.0 Add an injectable clock: module-level `now: () => string` default `() => new Date().toISOString()`, plus a `setClock`/`__setNowForTests` override so timestamp tests are deterministic (design D7)
-- [ ] 5.1 Implement `listTasks()` via `readdir(TASKS_DIR)` + reading each `<id>.json`, each read try/catch'd so a missing/malformed file is skipped; absent dir → empty list (model on `getUIState`'s degrade-to-empty)
-- [ ] 5.2 Implement `getTask(id)` reading `taskFilePath(id)`, returning the instance or undefined
-- [ ] 5.3 Implement `createTask(spec)` assigning `id` + `createdAt`/`updatedAt`, writing `taskFilePath(id)` via lazy `mkdirSync(TASKS_DIR, {recursive:true})` + `Bun.write` (model on `setUIState`)
-- [ ] 5.4 Implement `updateTaskStatus(id, status)` read-modify-writing the single `<id>.json`, refreshing `updatedAt`
-- [ ] 5.5 Implement `deleteTask(id)` via `unlink(taskFilePath(id))`
+- [x] 5.0 Add an injectable clock: module-level `now: () => string` default `() => new Date().toISOString()`, plus a `setClock`/`__setNowForTests` override so timestamp tests are deterministic (design D7)
+- [x] 5.1 Implement `listTasks()` via `readdir(TASKS_DIR)` + reading each `<id>.json`, each read try/catch'd so a missing/malformed file is skipped; absent dir → empty list (model on `getUIState`'s degrade-to-empty)
+- [x] 5.2 Implement `getTask(id)` reading `taskFilePath(id)`, returning the instance or undefined
+- [x] 5.3 Implement `createTask(spec)` assigning `id` + `createdAt`/`updatedAt`, writing `taskFilePath(id)` via lazy `mkdirSync(TASKS_DIR, {recursive:true})` + `Bun.write` (model on `setUIState`)
+- [x] 5.4 Implement `updateTaskStatus(id, status)` read-modify-writing the single `<id>.json`, refreshing `updatedAt`
+- [x] 5.5 Implement `deleteTask(id)` via `unlink(taskFilePath(id))`
 
 ## 6. Tests
 
