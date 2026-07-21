@@ -17,6 +17,7 @@ import { createDebugCommand } from "./commands/debug";
 import { createConfigCommand } from "./commands/config";
 import { createSpawnCommand } from "./commands/spawn";
 import { createInvokeCommand } from "./commands/invoke";
+import { createTaskCommand } from "./commands/task";
 import { createSidebarCommand } from "./commands/sidebar";
 import { createNotifyCommand } from "./commands/notify";
 
@@ -46,6 +47,7 @@ program.addCommand(createDebugCommand());
 program.addCommand(createConfigCommand());
 program.addCommand(createSpawnCommand());
 program.addCommand(createInvokeCommand());
+program.addCommand(createTaskCommand());
 program.addCommand(createSidebarCommand());
 program.addCommand(createNotifyCommand());
 

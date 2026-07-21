@@ -81,6 +81,7 @@ import { AttentionTracker } from "./attention-tracker";
 import { redirectStdioToLogFile } from "./log-redirect";
 import { InvocationManager } from "./invocation-manager";
 import { TaskManager } from "./task-manager";
+import { launchTask, realTmuxRunner } from "./task-launcher";
 import { Notifier, buildStateChangedPayload } from "./notifier";
 import { createNotifyDelivery } from "./notify-delivery";
 import { performJump, type JumpDeps } from "./notify-jump";
@@ -272,7 +273,14 @@ export class Daemon {
       this.sessionManager,
       invocationRegistry,
     );
-    this.taskManager = new TaskManager();
+    this.taskManager = new TaskManager({
+      launch: async (task) =>
+        launchTask(task, {
+          getAgentByType: (name) => this.agents.find((a) => a.name === name),
+          runTmux: realTmuxRunner,
+          prefs: await getPreferences(),
+        }),
+    });
 
     // Resolve the daemon's own binaries once (mirroring how it resolves every
     // other tool — `Bun.which`), shared by the delivery layer and the jump

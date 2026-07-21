@@ -28,8 +28,8 @@
 
 ## 5. CLI (`src/commands/task.ts`)
 
-- [ ] 5.1 `createTaskCommand()` with subcommands `list`, `create <project> [--agent] [--prompt] [--template] [--target] [--run]`, `run <id>`, `rm <id>`; each calls `ensureDaemon()` then `fetch` the `/tasks` endpoints (model on `spawn`/`invoke`)
-- [ ] 5.2 Register the command in `src/index.ts`
+- [x] 5.1 `createTaskCommand()` with subcommands `list`, `create <project> [--agent] [--prompt] [--template] [--target] [--run]`, `run <id>`, `rm <id>`; each calls `ensureDaemon()` then `fetch` the `/tasks` endpoints (model on `spawn`/`invoke`)
+- [x] 5.2 Register the command in `src/index.ts`
 
 ## 6. Tests
 
