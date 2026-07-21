@@ -19,6 +19,8 @@ import type { SSEEvent, FinishedInvocationStatus } from "../types";
 import type { Session, TmuxPane, EnrichedSession } from "../types/session";
 import type { AttentionTracker } from "./attention-tracker";
 import type { InvocationManager, InvocationEvent } from "./invocation-manager";
+import type { TaskManager, TaskManagerEvent } from "./task-manager";
+import { VALID_TASK_STATUSES, type TaskStatus } from "../lib/task";
 import { readInvocationResult } from "./invocation-results";
 import { INVOCATION_ID_PATTERN } from "../lib/invoke-helpers";
 import { noInvokeModeMessage } from "./invokers/helpers";
@@ -149,6 +151,23 @@ export function invocationEventToSSE(event: InvocationEvent): SSEEvent {
     ...(record.kind !== undefined ? { kind: record.kind } : {}),
   };
 }
+
+/**
+ * Map a `TaskManager` lifecycle event to a flat SSE event. Pure (like
+ * `invocationEventToSSE`): the server subscribes to `"change"` and broadcasts
+ * the result. `created`/`updated` carry the instance; `removed` carries the id.
+ */
+export function taskEventToSSE(event: TaskManagerEvent): SSEEvent {
+  const timestamp = new Date().toISOString();
+  if (event.kind === "removed") {
+    return { type: "task_removed", timestamp, id: event.id };
+  }
+  return {
+    type: event.kind === "created" ? "task_created" : "task_updated",
+    timestamp,
+    task: event.task,
+  };
+}
 /**
  * Upper bound on `prompt` body bytes. Accommodates realistic piped
  * inputs (git diffs, test logs) while preventing a misbehaving caller
@@ -246,6 +265,7 @@ export class DaemonServer {
   } = { selectedSessionId: null, selectedHeaderKey: null };
   private attentionTracker: AttentionTracker;
   private invocationManager: InvocationManager;
+  private taskManager: TaskManager;
   private getHookAdapter: (agentName: string) => HookAdapter | null;
   private paneSendDeps: PaneSendDeps;
   private runNotificationAction: NotificationActionRunner | null;
@@ -257,6 +277,7 @@ export class DaemonServer {
     getAgentByType: AgentLookup,
     attentionTracker: AttentionTracker,
     invocationManager: InvocationManager,
+    taskManager: TaskManager,
     getHookAdapter: (agentName: string) => HookAdapter | null,
     paneSendDeps: PaneSendDeps = { sendLiteralToPane, sendPromptToPane },
     runNotificationAction: NotificationActionRunner | null = null,
@@ -267,6 +288,7 @@ export class DaemonServer {
     this.getAgentByType = getAgentByType;
     this.attentionTracker = attentionTracker;
     this.invocationManager = invocationManager;
+    this.taskManager = taskManager;
     this.getHookAdapter = getHookAdapter;
     this.paneSendDeps = paneSendDeps;
     this.runNotificationAction = runNotificationAction;
@@ -286,6 +308,12 @@ export class DaemonServer {
     // session via `session_created`) lives in the TUI, not here.
     this.invocationManager.on("change", (event: InvocationEvent) => {
       this.broadcastEvent(invocationEventToSSE(event));
+    });
+
+    // Same dumb-transport subscription for task lifecycle: map the manager's
+    // discriminated change event to a flat SSE event and fan it out.
+    this.taskManager.on("change", (event: TaskManagerEvent) => {
+      this.broadcastEvent(taskEventToSSE(event));
     });
 
     // PR lookups resolve in the background; when one lands a changed
@@ -679,6 +707,30 @@ export class DaemonServer {
       return await this.handleInvocationResult(id, corsHeaders);
     }
 
+    if (path === "/tasks" && req.method === "GET") {
+      return await this.handleGetTasks(corsHeaders);
+    }
+    if (path === "/tasks" && req.method === "POST") {
+      return await this.handleCreateTask(req, corsHeaders);
+    }
+    // Suffixed POST must precede the generic /tasks/{id} routes below.
+    if (
+      path.startsWith("/tasks/") &&
+      path.endsWith("/status") &&
+      req.method === "POST"
+    ) {
+      const id = path.slice("/tasks/".length, -"/status".length);
+      return await this.handleUpdateTaskStatus(id, req, corsHeaders);
+    }
+    if (path.startsWith("/tasks/") && req.method === "GET") {
+      const id = path.slice("/tasks/".length);
+      return await this.handleGetTask(id, corsHeaders);
+    }
+    if (path.startsWith("/tasks/") && req.method === "DELETE") {
+      const id = path.slice("/tasks/".length);
+      return await this.handleDeleteTask(id, corsHeaders);
+    }
+
     if (path === "/events" && req.method === "GET") {
       return this.handleSSE();
     }
@@ -851,6 +903,102 @@ export class DaemonServer {
       );
     }
 
+    return Response.json({ success: true }, { headers });
+  }
+
+  private async handleGetTasks(
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    return Response.json(
+      { tasks: await this.taskManager.list() },
+      { headers },
+    );
+  }
+
+  private async handleGetTask(
+    id: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    const task = await this.taskManager.get(id);
+    if (!task) {
+      return Response.json({ error: "Task not found" }, { status: 404, headers });
+    }
+    return Response.json(task, { headers });
+  }
+
+  private async handleCreateTask(
+    req: Request,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    let body: { project?: string; template?: string } & Record<string, unknown>;
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return Response.json(
+        { success: false, message: "Invalid JSON body" },
+        { status: 400, headers },
+      );
+    }
+    if (typeof body.project !== "string" || body.project.length === 0) {
+      return Response.json(
+        { success: false, message: "project is required" },
+        { status: 400, headers },
+      );
+    }
+    try {
+      // `create` runs the cascade and `validateNewTask`, which throws on an
+      // invalid resolved spec (e.g. the reserved `new-session` target).
+      const task = await this.taskManager.create(
+        body as { project: string; template?: string },
+      );
+      return Response.json({ success: true, task }, { headers });
+    } catch (err) {
+      return Response.json(
+        { success: false, message: (err as Error).message },
+        { status: 400, headers },
+      );
+    }
+  }
+
+  private async handleUpdateTaskStatus(
+    id: string,
+    req: Request,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    let body: { status?: string };
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return Response.json(
+        { success: false, message: "Invalid JSON body" },
+        { status: 400, headers },
+      );
+    }
+    if (!VALID_TASK_STATUSES.includes(body.status as TaskStatus)) {
+      return Response.json(
+        { success: false, message: `Invalid status: ${String(body.status)}` },
+        { status: 400, headers },
+      );
+    }
+    const task = await this.taskManager.updateStatus(
+      id,
+      body.status as TaskStatus,
+    );
+    if (!task) {
+      return Response.json(
+        { success: false, message: "Task not found" },
+        { status: 404, headers },
+      );
+    }
+    return Response.json({ success: true, task }, { headers });
+  }
+
+  private async handleDeleteTask(
+    id: string,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    // Idempotent: the store treats a missing file as a non-error.
+    await this.taskManager.delete(id);
     return Response.json({ success: true }, { headers });
   }
 
@@ -1400,6 +1548,9 @@ export class DaemonServer {
           invocations: this.invocationManager
             .listInvocations()
             .map((r) => ({ invocationId: r.invocationId, status: r.status })),
+          // Task snapshot so a reconnecting client reconciles its task list
+          // atomically with session/invocation hydration.
+          tasks: await this.taskManager.list(),
         };
         this.sendToClient(controller, initEvent);
       },

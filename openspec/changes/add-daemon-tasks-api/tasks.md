@@ -16,15 +16,15 @@
 
 ## 3. HTTP routes + manager→SSE mapper (`src/daemon/server.ts`)
 
-- [ ] 3.1 Accept a `TaskManager` as a new positional ctor arg; store it as a field alongside `invocationManager`
-- [ ] 3.2 Add a pure `taskEventToSSE(event: TaskManagerEvent): SSEEvent` mapper (mirror `invocationEventToSSE`)
-- [ ] 3.3 In the ctor, subscribe to `taskManager.on("change", e => this.broadcastEvent(taskEventToSSE(e)))`
-- [ ] 3.4 In `handleSSE`, populate `init.tasks` from `taskManager.list()`
-- [ ] 3.5 Add routes to the `if`-ladder, suffixed-before-generic: `GET /tasks`, `POST /tasks`, `POST /tasks/{id}/status`, `GET /tasks/{id}`, `DELETE /tasks/{id}`
-- [ ] 3.6 `handleGetTasks` → `{ tasks }` (200); `handleGetTask` → instance (200) or 404
-- [ ] 3.7 `handleCreateTask`: JSON body try/catch → 400; call `taskManager.create`; map a `validateNewTask` throw (incl. `new-session`) → 400 `{success:false,message}`; success → 200 `{success:true, task}`
-- [ ] 3.8 `handleUpdateTaskStatus`: validate status ∈ `VALID_TASK_STATUSES` (→400); call `updateStatus`; 404 when undefined; 200 `{success:true, task}` otherwise
-- [ ] 3.9 `handleDeleteTask`: call `delete`; return 200 `{success:true}` (idempotent)
+- [x] 3.1 Accept a `TaskManager` as a new positional ctor arg; store it as a field alongside `invocationManager`
+- [x] 3.2 Add a pure `taskEventToSSE(event: TaskManagerEvent): SSEEvent` mapper (mirror `invocationEventToSSE`)
+- [x] 3.3 In the ctor, subscribe to `taskManager.on("change", e => this.broadcastEvent(taskEventToSSE(e)))`
+- [x] 3.4 In `handleSSE`, populate `init.tasks` from `taskManager.list()`
+- [x] 3.5 Add routes to the `if`-ladder, suffixed-before-generic: `GET /tasks`, `POST /tasks`, `POST /tasks/{id}/status`, `GET /tasks/{id}`, `DELETE /tasks/{id}`
+- [x] 3.6 `handleGetTasks` → `{ tasks }` (200); `handleGetTask` → instance (200) or 404
+- [x] 3.7 `handleCreateTask`: JSON body try/catch → 400; call `taskManager.create`; map a `validateNewTask` throw (incl. `new-session`) → 400 `{success:false,message}`; success → 200 `{success:true, task}`
+- [x] 3.8 `handleUpdateTaskStatus`: validate status ∈ `VALID_TASK_STATUSES` (→400); call `updateStatus`; 404 when undefined; 200 `{success:true, task}` otherwise
+- [x] 3.9 `handleDeleteTask`: call `delete`; return 200 `{success:true}` (idempotent)
 
 ## 4. SSE consumer (`src/tui/utils/sse.ts`)
 
@@ -33,8 +33,8 @@
 
 ## 5. Wiring (`src/daemon/index.ts`)
 
-- [ ] 5.1 Declare `private taskManager: TaskManager;` and construct it in the daemon ctor
-- [ ] 5.2 Pass `taskManager` into the `DaemonServer` constructor call (new positional arg matching 3.1)
+- [x] 5.1 Declare `private taskManager: TaskManager;` and construct it in the daemon ctor
+- [x] 5.2 Pass `taskManager` into the `DaemonServer` constructor call (new positional arg matching 3.1)
 
 ## 6. Tests
 

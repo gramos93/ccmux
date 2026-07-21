@@ -14,6 +14,7 @@ import type { Session, TmuxPane, EnrichedSession } from "../types/session";
 import { AttentionTracker } from "./attention-tracker";
 import { InvocationManager } from "./invocation-manager";
 import { InvocationRegistry } from "./invokers/registry";
+import { TaskManager } from "./task-manager";
 import { stubInvoker } from "./invokers/test-helpers";
 import type { HookAdapter } from "./hook-adapter";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
@@ -106,7 +107,7 @@ function createServer(
     sendLiteralToPane: mock(async () => true),
     sendPromptToPane: mock(async () => true),
   },
-  runNotificationAction?: ConstructorParameters<typeof DaemonServer>[7],
+  runNotificationAction?: ConstructorParameters<typeof DaemonServer>[8],
 ) {
   const mgr = manager ?? new SessionManager();
   const cache = paneCache ?? new Map<string, TmuxPane>();
@@ -118,6 +119,7 @@ function createServer(
       stubInvoker("subprocess"),
     ),
   );
+  const taskManager = new TaskManager();
   const resolveHookAdapter = getHookAdapter ?? ((_name: string) => null);
   const resolveAgent =
     agentLookup ??
@@ -128,6 +130,7 @@ function createServer(
     resolveAgent,
     attn,
     invocationManager,
+    taskManager,
     resolveHookAdapter,
     paneSendDeps,
     runNotificationAction ?? null,
