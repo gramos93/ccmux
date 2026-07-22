@@ -2491,7 +2491,8 @@ describe("task HTTP endpoints", () => {
 
   async function createOne(internals: ServerInternals): Promise<string> {
     const res = await internals.handleRequest(
-      jsonPost("/tasks", { project: "p", agent: "claude", prompt: "hi" }),
+      // A real dir so the launcher's cwd check passes on run.
+      jsonPost("/tasks", { project: tmpdir(), agent: "claude", prompt: "hi" }),
     );
     const json = (await res.json()) as { task: { id: string } };
     return json.task.id;

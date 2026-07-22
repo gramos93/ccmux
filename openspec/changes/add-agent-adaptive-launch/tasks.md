@@ -7,11 +7,11 @@
 
 ## 2. Agent-adaptive interactive launcher (`src/daemon/task-launcher.ts`)
 
-- [ ] 2.1 Replace `buildTaskCommand`'s `--prompt` with an adaptive launch command: `resumeCommand`-with-`{id}` when resuming, else `executable` (fallback to agent name / `prefs.command` for claude)
-- [ ] 2.2 `launchTask` new-window/split: create pane, launch the command, then deliver the prompt via `send-keys` after the agent's `readyPattern` matches (bounded timeout; fixed-delay fallback when no `readyPattern`). Reuse the claude-invoker ready-wait / `sendLiteralToPane` helpers
-- [ ] 2.3 When the task has a `command` argv, launch it verbatim (discrete `send-keys` tokens) instead of the adapter command
-- [ ] 2.4 Keep `send-to-existing` (raw prompt to `targetRef`); background is NOT handled here (see §3)
-- [ ] 2.5 Before creating a pane, verify the task's working directory exists (`existsSync` + `isDirectory`); throw a clear error if not (→ `handleRunTask` 400). Authoritative counterpart to the CLI's create-time check
+- [x] 2.1 Replace `buildTaskCommand`'s `--prompt` with an adaptive launch command: `resumeCommand`-with-`{id}` when resuming, else `executable` (fallback to agent name / `prefs.command` for claude)
+- [x] 2.2 `launchTask` new-window/split: create pane, launch the command, then deliver the prompt via `send-keys` after the agent's `readyPattern` matches (bounded timeout; fixed-delay fallback when no `readyPattern`). Reuse the claude-invoker ready-wait / `sendLiteralToPane` helpers
+- [x] 2.3 When the task has a `command` argv, launch it verbatim (discrete `send-keys` tokens) instead of the adapter command
+- [x] 2.4 Keep `send-to-existing` (raw prompt to `targetRef`); background is NOT handled here (see §3)
+- [x] 2.5 Before creating a pane, verify the task's working directory exists (`existsSync` + `isDirectory`); throw a clear error if not (→ `handleRunTask` 400). Authoritative counterpart to the CLI's create-time check
 
 ## 3. Background routing (`src/daemon/task-manager.ts` + `index.ts`)
 
@@ -29,7 +29,7 @@
 
 ## 5. Tests
 
-- [ ] 5.1 Launcher: adaptive command uses `executable`/`resumeCommand` (not `--prompt`); ready-then-send delivers the prompt after a matching capture (fake tmux runner + fake capture); passthrough `command` launched verbatim; a missing working directory throws before any tmux call
+- [x] 5.1 Launcher: adaptive command uses `executable`/`resumeCommand` (not `--prompt`); ready-then-send delivers the prompt after a matching capture (fake tmux runner + fake capture); passthrough `command` launched verbatim; a missing working directory throws before any tmux call
 - [ ] 5.2 Manager: `background` run calls the injected invoke bridge with a correct `InvokeInput`, records `invocationId`, stays `running`, then patches `done`/`failed` on resolve (inject a fake bridge); non-invokable agent errors without leaving `running`
 - [ ] 5.3 Manager: interactive run still records `paneId` + correlates (regression against the fake launcher)
 - [ ] 5.4 Model: `background` target validates; `command` round-trips through create→get
