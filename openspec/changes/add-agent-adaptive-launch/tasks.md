@@ -37,7 +37,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `bun run typecheck` passes
-- [ ] 6.2 `bun test` passes
-- [ ] 6.3 Live smoke (isolated daemon, detached tmux): an interactive `ccmux task create -d <repo> --agent <a> --prompt X --run` launches the real agent binary (not `--prompt`) and the prompt lands after ready; a `--bg` task runs headlessly via invoke and flips to `done`; a `-- <raw>` task launches the raw command verbatim
-- [ ] 6.4 Confirm no TUI renderer / `/spawn` changes (spawn's twin bug left as a noted follow-up)
+- [x] 6.1 `bun run typecheck` passes
+- [x] 6.2 `bun test` passes
+- [x] 6.3 Live smoke (isolated daemon, detached tmux): an interactive `ccmux task create -d <repo> --agent <a> --prompt X --run` launches the real agent binary (not `--prompt`) and the prompt lands after ready; a `--bg` task runs headlessly via invoke and flips to `done`; a `-- <raw>` task launches the raw command verbatim
+- [x] 6.4 Confirm no TUI renderer / `/spawn` changes (spawn's twin bug left as a noted follow-up)
