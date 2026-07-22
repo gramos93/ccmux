@@ -12,9 +12,13 @@
  * `openspec/changes/add-task-store`.
  */
 
-/** Where a launched task's agent runs. `new-session` is reserved for a later
- *  slice and is intentionally NOT part of the accepted set yet. */
-export type TaskTarget = "new-window" | "split" | "send-to-existing";
+/** Where a launched task's agent runs. `background` runs headlessly via the
+ *  invoke subsystem (no pane). `new-session` is reserved and NOT accepted. */
+export type TaskTarget =
+  | "new-window"
+  | "split"
+  | "send-to-existing"
+  | "background";
 
 /** Lifecycle status of a task instance. */
 export type TaskStatus = "pending" | "running" | "done" | "failed";
@@ -23,6 +27,7 @@ export const VALID_TASK_TARGETS: TaskTarget[] = [
   "new-window",
   "split",
   "send-to-existing",
+  "background",
 ];
 
 export const VALID_TASK_STATUSES: TaskStatus[] = [
@@ -65,6 +70,12 @@ export interface TaskSpec {
    * where `send-to-existing` will require it. `new-window` ignores it.
    */
   targetRef?: string;
+  /**
+   * Raw passthrough argv. When present, the launcher runs it verbatim instead
+   * of a command built from the agent adapter (the escape hatch). Set from the
+   * CLI's `-- <args>` tail.
+   */
+  command?: string[];
   /** Worktree intent; see {@link TaskWorktree}. */
   worktree?: TaskWorktree;
 }
@@ -83,6 +94,8 @@ export interface TaskInstance extends TaskSpec {
   paneId?: string;
   /** The ccmux session correlated to this task by pane id. */
   sessionId?: string;
+  /** The invocation a `background` task was dispatched to. */
+  invocationId?: string;
 }
 
 /**
@@ -118,6 +131,7 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
     agent,
     prompt,
     ...(spec.targetRef !== undefined ? { targetRef: spec.targetRef } : {}),
+    ...(spec.command !== undefined ? { command: spec.command } : {}),
     ...(spec.worktree !== undefined ? { worktree: spec.worktree } : {}),
   };
 }

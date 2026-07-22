@@ -102,7 +102,9 @@ export async function createTask(spec: Partial<TaskSpec>): Promise<TaskInstance>
  */
 export async function patchTask(
   id: string,
-  patch: Partial<Pick<TaskInstance, "status" | "paneId" | "sessionId">>,
+  patch: Partial<
+    Pick<TaskInstance, "status" | "paneId" | "sessionId" | "invocationId">
+  >,
 ): Promise<TaskInstance | undefined> {
   const task = await getTask(id);
   if (!task) return undefined;

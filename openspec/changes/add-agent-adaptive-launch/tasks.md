@@ -1,8 +1,9 @@
 ## 1. Model (`src/lib/task.ts`)
 
-- [ ] 1.1 Add `"background"` to `TaskTarget`; keep `new-session` reserved; add it to `VALID_TASK_TARGETS`
-- [ ] 1.2 Add optional `command?: string[]` (raw passthrough argv) to `TaskSpec`
-- [ ] 1.3 `validateNewTask` accepts `background`; `resolveTask` built-in target default stays `new-window`
+- [x] 1.1 Add `"background"` to `TaskTarget`; keep `new-session` reserved; add it to `VALID_TASK_TARGETS`
+- [x] 1.2 Add optional `command?: string[]` (raw passthrough argv) to `TaskSpec`; add optional `invocationId?: string` to `TaskInstance` (background link)
+- [x] 1.3 `validateNewTask` accepts `background`; `resolveTask` built-in target default stays `new-window`
+- [x] 1.4 Extend `patchTask`'s allowed keys with `invocationId` (store)
 
 ## 2. Agent-adaptive interactive launcher (`src/daemon/task-launcher.ts`)
 

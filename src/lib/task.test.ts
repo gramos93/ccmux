@@ -87,9 +87,16 @@ describe("validateNewTask", () => {
       ...base,
       target: "send-to-existing",
       targetRef: "%3",
+      command: ["claude", "-p", "hi"],
       worktree: { branch: "feat/x", base: "main" },
     });
     expect(spec.targetRef).toBe("%3");
+    expect(spec.command).toEqual(["claude", "-p", "hi"]);
     expect(spec.worktree).toEqual({ branch: "feat/x", base: "main" });
+  });
+
+  it("accepts the background target", () => {
+    const spec = validateNewTask({ ...base, target: "background" });
+    expect(spec.target).toBe("background");
   });
 });

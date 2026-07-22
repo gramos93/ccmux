@@ -10,6 +10,8 @@ The optional `targetRef` field SHALL identify the tmux pane or session that a `s
 
 The optional `command` field SHALL be a raw argv (`string[]`) that, when present, is launched verbatim instead of a command built from the agent adapter. It is the passthrough escape hatch; the data model only persists it.
 
+Instances MAY additionally carry an optional `invocationId` link field, set when a `background` task is dispatched to the invoke subsystem, so the task can be joined to its invocation.
+
 The `worktree` field SHALL be either a boolean or an object `{ branch?: string; base?: string }`. Absent or `false` means no worktree; `true` means a worktree with defaulted naming; the object form names the branch and/or base for the worktree created by a later capability. Actual worktree creation is out of scope for the data model.
 
 The `status` field of an instance SHALL be one of `pending`, `running`, `done`, or `failed`.
@@ -33,3 +35,8 @@ The `status` field of an instance SHALL be one of `pending`, `running`, `done`, 
 
 - **WHEN** a task is created with a `command` argv
 - **THEN** the store persists the `command` alongside the instance
+
+#### Scenario: invocationId recorded for background tasks
+
+- **WHEN** a `background` task is dispatched to the invoke subsystem
+- **THEN** the instance records the resulting `invocationId`
