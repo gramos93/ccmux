@@ -1,3 +1,4 @@
+import { existsSync, statSync } from "fs";
 import { Command } from "commander";
 import { getDaemonUrl } from "../lib/config";
 import type { TaskInstance } from "../lib/task";
@@ -103,16 +104,23 @@ export function createTaskCommand(): Command {
         targetRef?: string;
         run?: boolean;
       }) => {
+        // `bin/ccmux` cd's into the repo before running, so process.cwd() is
+        // the install dir; it preserves the real caller dir in
+        // CCMUX_CALLER_PWD. Prefer that for the default working directory.
+        const project =
+          options.dir ?? process.env.CCMUX_CALLER_PWD ?? process.cwd();
+        // Fast fail BEFORE starting the daemon: the working dir must exist (the
+        // daemon re-checks at launch in case it's deleted between create/run).
+        if (!existsSync(project) || !statSync(project).isDirectory()) {
+          console.error(`Directory does not exist: ${project}`);
+          process.exit(1);
+        }
         await ensureDaemon();
         // Omit unset agent/target so the daemon's default cascade (config
         // `defaults` → project → template → built-in) applies. JSON.stringify
         // drops `undefined` keys.
         const res = await post("/tasks", {
-          // `bin/ccmux` cd's into the repo before running, so process.cwd() is
-          // the install dir; it preserves the real caller dir in
-          // CCMUX_CALLER_PWD. Prefer that for the default working directory.
-          project:
-            options.dir ?? process.env.CCMUX_CALLER_PWD ?? process.cwd(),
+          project,
           agent: options.agent,
           prompt: options.prompt,
           template: options.template,

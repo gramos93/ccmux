@@ -1,9 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import { tmpdir } from "os";
 
 // ensureDaemon must be a no-op in tests (don't spawn a daemon).
 mock.module("./shared", () => ({ ensureDaemon: async () => {} }));
 
 import { createTaskCommand } from "./task";
+
+// A real, existing directory to pass to -d so the create-time existence check
+// passes. Use the OS temp dir.
+const DIR = tmpdir();
 
 type Call = { url: string; method: string; body?: unknown };
 let calls: Call[];
@@ -54,23 +59,23 @@ describe("ccmux task create", () => {
 
   it("prefers CCMUX_CALLER_PWD over process.cwd() (bin/ccmux caller dir)", async () => {
     const saved = process.env.CCMUX_CALLER_PWD;
-    process.env.CCMUX_CALLER_PWD = "/caller/dir";
+    process.env.CCMUX_CALLER_PWD = DIR;
     stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
     await runCli("create", "--prompt", "hi");
-    expect((createCall()!.body as { project: string }).project).toBe("/caller/dir");
+    expect((createCall()!.body as { project: string }).project).toBe(DIR);
     if (saved === undefined) delete process.env.CCMUX_CALLER_PWD;
     else process.env.CCMUX_CALLER_PWD = saved;
   });
 
   it("uses -d/--dir when given", async () => {
     stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
-    await runCli("create", "-d", "/repo", "--prompt", "hi");
-    expect((createCall()!.body as { project: string }).project).toBe("/repo");
+    await runCli("create", "-d", DIR, "--prompt", "hi");
+    expect((createCall()!.body as { project: string }).project).toBe(DIR);
   });
 
   it("omits agent and target from the body when their flags are unset", async () => {
     stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
-    await runCli("create", "-d", "/repo");
+    await runCli("create", "-d", DIR);
     const body = createCall()!.body as Record<string, unknown>;
     expect("agent" in body).toBe(false);
     expect("target" in body).toBe(false);
@@ -78,10 +83,25 @@ describe("ccmux task create", () => {
 
   it("sends agent/target when the flags are set", async () => {
     stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
-    await runCli("create", "-d", "/r", "--agent", "codex", "--target", "split");
+    await runCli("create", "-d", DIR, "--agent", "codex", "--target", "split");
     const body = createCall()!.body as { agent: string; target: string };
     expect(body.agent).toBe("codex");
     expect(body.target).toBe("split");
+  });
+
+  it("errors (no create) when the dir does not exist", async () => {
+    // process.exit is mocked to THROW so it halts like a real exit; otherwise
+    // execution would fall through to the POST.
+    const origExit = process.exit;
+    process.exit = ((): never => {
+      throw new Error("exit");
+    }) as unknown as typeof process.exit;
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await expect(
+      runCli("create", "-d", "/no/such/dir/really", "--prompt", "hi"),
+    ).rejects.toThrow("exit");
+    expect(createCall()).toBeUndefined(); // never POSTed
+    process.exit = origExit;
   });
 
   it("--run creates then runs", async () => {
@@ -90,7 +110,7 @@ describe("ccmux task create", () => {
         ? { task: { id: "abcdef12", status: "running" } }
         : { task: { id: "abcdef12", status: "pending" } },
     );
-    await runCli("create", "-d", "/r", "--run");
+    await runCli("create", "-d", DIR, "--run");
     expect(calls.map((c) => c.url.split("/").slice(-1)[0]).includes("run")).toBe(
       true,
     );

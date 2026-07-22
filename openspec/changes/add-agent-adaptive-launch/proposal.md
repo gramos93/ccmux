@@ -8,6 +8,7 @@ Task launch hardcodes `<binary> --prompt '<prompt>'`, which matches **no** agent
 - **Background (headless) tasks route to the invoke subsystem.** Add a `background` task target: instead of a pane, the daemon builds an `InvokeInput` and calls `InvocationManager.invoke` (which already picks `ClaudeInvoker` vs `SubprocessInvoker` from `invokeMode` and captures output). The task records the `invocationId`, stays `running`, and flips to `done`/`failed` when the invocation resolves. Realizes the fork's "headless Task = invocation, interactive Task = spawn" convergence.
 - **Raw passthrough.** `TaskSpec` gains an optional `command: string[]` (raw argv). When set, the launcher runs it verbatim in the pane, bypassing the adapter entirely. CLI surface: `ccmux task create ... -- <raw agent args>` (modeled on `invoke`'s `[args...]`, with commander passthrough enabled).
 - **CLI:** `--bg` (sets `target: background`) and the `-- <passthrough>` tail on `ccmux task create`.
+- **Working-dir validation at launch:** the daemon verifies the task's cwd exists before creating a pane (authoritative counterpart to the CLI's create-time check in `add-task-cli-ergonomics`, covering the dir-deleted-between-create-and-run case).
 
 Non-goals: fixing `/spawn`'s identical `--prompt` bug (shares the flaw; a follow-up can reuse the new adaptive builder), a per-agent "interactive initial-prompt flag" field (the ready-then-send pattern avoids needing one), and streaming background output into the TUI (invoke already captures it; surfacing is a later slice).
 

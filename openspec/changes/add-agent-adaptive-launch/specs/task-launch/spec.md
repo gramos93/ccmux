@@ -2,7 +2,7 @@
 
 ### Requirement: Run a task into a pane
 
-The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launching the resolved agent with the task's prompt and setting status to `running`. For `new-window` and `split` it SHALL create a tmux pane, capture its `#{pane_id}`, and launch the agent **adaptively**: run the agent's interactive binary (`executable`, or `resumeCommand` when resuming a session), and deliver the prompt via `send-keys` once the agent signals readiness (its `readyPattern`, with a timeout fallback) — NOT via a hardcoded prompt flag. When the task carries a raw `command`, that argv SHALL be launched verbatim instead (see the passthrough requirement). For `send-to-existing` it SHALL send the prompt into the pane identified by `targetRef`, which is REQUIRED for that target. The `new-session` target SHALL be rejected. Running a task that does not exist SHALL yield `404`.
+The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launching the resolved agent with the task's prompt and setting status to `running`. For pane targets (`new-window`, `split`) the daemon SHALL verify the task's working directory exists before creating the pane, failing with a clear error when it does not (it may have been deleted between create and run). For `new-window` and `split` it SHALL create a tmux pane, capture its `#{pane_id}`, and launch the agent **adaptively**: run the agent's interactive binary (`executable`, or `resumeCommand` when resuming a session), and deliver the prompt via `send-keys` once the agent signals readiness (its `readyPattern`, with a timeout fallback) — NOT via a hardcoded prompt flag. When the task carries a raw `command`, that argv SHALL be launched verbatim instead (see the passthrough requirement). For `send-to-existing` it SHALL send the prompt into the pane identified by `targetRef`, which is REQUIRED for that target. The `new-session` target SHALL be rejected. Running a task that does not exist SHALL yield `404`.
 
 #### Scenario: Run a new-window task adaptively
 
@@ -33,6 +33,11 @@ The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launchin
 
 - **WHEN** `POST /tasks/{id}/run` is called for a task whose target is `new-session`
 - **THEN** the response is `400` and nothing is launched
+
+#### Scenario: Run errors on a missing working directory
+
+- **WHEN** a pane task is run but its working directory no longer exists
+- **THEN** the run fails with a clear error and no pane is created
 
 #### Scenario: Run a missing task
 
