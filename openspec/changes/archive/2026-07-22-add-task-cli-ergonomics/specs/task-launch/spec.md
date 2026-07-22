@@ -4,7 +4,7 @@
 
 The tool SHALL provide a `ccmux task` command group to drive tasks against the daemon: `list`, `create` (with an optional flag to run immediately), `run <ref>`, and `rm <ref>`. Each subcommand SHALL ensure the daemon is running and communicate over the existing `/tasks` HTTP endpoints, mirroring `ccmux spawn`/`invoke`.
 
-`create` SHALL default the working directory to the current directory, overridable with `-d/--dir`. It SHALL NOT force default values for `agent` or `target`: an unset flag is sent as absent so the daemon's default cascade (config `defaults` → per-project → template → input, then built-in `target`) applies.
+`create` SHALL default the working directory to the current directory, overridable with `-d/--dir`, and SHALL fail before contacting the daemon when the resolved directory does not exist. It SHALL NOT force default values for `agent` or `target`: an unset flag is sent as absent so the daemon's default cascade (config `defaults` → per-project → template → input, then built-in `target`) applies.
 
 `run` and `rm` SHALL accept a task reference that is either a full id or a unique id prefix, resolving the prefix CLI-side against the task list: a prefix matching exactly one task resolves to its full id; an ambiguous prefix SHALL error and list the candidates; no match SHALL error. The daemon endpoints continue to take full ids.
 
@@ -17,6 +17,11 @@ The tool SHALL provide a `ccmux task` command group to drive tasks against the d
 
 - **WHEN** `ccmux task create -d <path>` is invoked
 - **THEN** the task is created for `<path>`
+
+#### Scenario: Create rejects a nonexistent dir
+
+- **WHEN** `ccmux task create -d <path>` names a directory that does not exist
+- **THEN** the CLI errors and no task is created
 
 #### Scenario: Unset agent falls through to config default
 
