@@ -27,6 +27,7 @@ import {
   type TaskStatus,
 } from "../lib/task";
 import type { LaunchResult } from "./task-launcher";
+import type { InvokeResult } from "./invokers/types";
 
 /** Discriminated lifecycle event emitted on `"change"` after each mutation. */
 export type TaskManagerEvent =
@@ -43,8 +44,20 @@ export type CreateTaskBody = { project: string; template?: string } & Partial<
 /** Launches a task into a pane; injected so `run` is testable without tmux. */
 export type TaskLaunchFn = (task: TaskInstance) => Promise<LaunchResult>;
 
+/**
+ * Dispatches a `background` task to the invoke subsystem. Returns the minted
+ * `invocationId` synchronously (well, once the input is built) and a `result`
+ * promise that resolves when the invocation completes. Throws for a
+ * non-invokable agent so `run` can surface a 400 without marking the task
+ * running. Injected so `run` is testable without the invoke subsystem.
+ */
+export type TaskInvokeFn = (
+  task: TaskInstance,
+) => Promise<{ invocationId: string; result: Promise<InvokeResult> }>;
+
 export class TaskManager extends EventEmitter {
   private launch: TaskLaunchFn;
+  private invoke: TaskInvokeFn;
   /**
    * paneId → taskId for tasks launched-but-not-yet-correlated. Drained on the
    * first matching session event so the hot session path is a `Map.get`, never
@@ -52,12 +65,17 @@ export class TaskManager extends EventEmitter {
    */
   private pendingCorrelation = new Map<string, string>();
 
-  constructor(deps: { launch?: TaskLaunchFn } = {}) {
+  constructor(deps: { launch?: TaskLaunchFn; invoke?: TaskInvokeFn } = {}) {
     super();
     this.launch =
       deps.launch ??
       (() => {
         throw new Error("TaskManager: launcher not configured");
+      });
+    this.invoke =
+      deps.invoke ??
+      (() => {
+        throw new Error("TaskManager: invoke bridge not configured");
       });
   }
 
@@ -123,7 +141,15 @@ export class TaskManager extends EventEmitter {
   async run(id: string): Promise<TaskInstance | undefined> {
     const task = await this.get(id);
     if (!task) return undefined;
+    if (task.target === "background") return this.runBackground(id, task);
+    return this.runInteractive(id, task);
+  }
 
+  /** Launch into a pane and register the pane for session correlation. */
+  private async runInteractive(
+    id: string,
+    task: TaskInstance,
+  ): Promise<TaskInstance | undefined> {
     const result = await this.launch(task);
 
     const updated = await patchTask(id, {
@@ -140,6 +166,41 @@ export class TaskManager extends EventEmitter {
 
     this.safeEmit({ kind: "updated", task: updated });
     return updated;
+  }
+
+  /**
+   * Dispatch a headless task to the invoke subsystem. Records the
+   * `invocationId`, stays `running`, and patches `done`/`failed` when the
+   * invocation resolves (asynchronously — the run response doesn't block on
+   * completion). A non-invokable agent throws before anything is marked running.
+   */
+  private async runBackground(
+    id: string,
+    task: TaskInstance,
+  ): Promise<TaskInstance | undefined> {
+    const handle = await this.invoke(task); // throws for non-invokable → 400
+
+    const updated = await patchTask(id, {
+      status: "running",
+      invocationId: handle.invocationId,
+    });
+    if (!updated) return undefined;
+
+    // Settle status when the invocation completes, without blocking the run.
+    void handle.result
+      .then((res) => this.finishBackground(id, res.success ? "done" : "failed"))
+      .catch(() => this.finishBackground(id, "failed"));
+
+    this.safeEmit({ kind: "updated", task: updated });
+    return updated;
+  }
+
+  private async finishBackground(
+    id: string,
+    status: TaskStatus,
+  ): Promise<void> {
+    const t = await patchTask(id, { status });
+    if (t) this.safeEmit({ kind: "updated", task: t });
   }
 
   /**

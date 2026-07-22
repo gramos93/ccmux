@@ -175,6 +175,78 @@ describe("TaskManager.run + correlation", () => {
   });
 });
 
+describe("TaskManager.run background", () => {
+  const bgBody = {
+    project: "p",
+    agent: "claude",
+    prompt: "hi",
+    target: "background" as const,
+  };
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+
+  it("dispatches to the invoke bridge, records invocationId, and stays running", async () => {
+    const invoke = async () => ({
+      invocationId: "inv_abc",
+      result: Promise.resolve({
+        success: true as const,
+        invocationId: "inv_abc",
+        text: "",
+        durationMs: 1,
+      }),
+    });
+    const tm = new TaskManager({ invoke });
+    const created = await tm.create(bgBody);
+    const ran = await tm.run(created.id);
+    expect(ran?.status).toBe("running");
+    expect(ran?.invocationId).toBe("inv_abc");
+    expect(ran?.paneId).toBeUndefined();
+  });
+
+  it("patches done when the invocation resolves successfully", async () => {
+    const invoke = async () => ({
+      invocationId: "inv_ok",
+      result: Promise.resolve({
+        success: true as const,
+        invocationId: "inv_ok",
+        text: "",
+        durationMs: 1,
+      }),
+    });
+    const tm = new TaskManager({ invoke });
+    const created = await tm.create(bgBody);
+    await tm.run(created.id);
+    await flush();
+    expect((await tm.get(created.id))?.status).toBe("done");
+  });
+
+  it("patches failed when the invocation resolves with failure", async () => {
+    const invoke = async () => ({
+      invocationId: "inv_bad",
+      result: Promise.resolve({
+        success: false as const,
+        invocationId: "inv_bad",
+        kind: "agent_error" as const,
+        message: "boom",
+      }),
+    });
+    const tm = new TaskManager({ invoke });
+    const created = await tm.create(bgBody);
+    await tm.run(created.id);
+    await flush();
+    expect((await tm.get(created.id))?.status).toBe("failed");
+  });
+
+  it("a non-invokable agent throws and leaves the task not-running", async () => {
+    const invoke = async () => {
+      throw new Error("agent does not support invoke (no invokeMode)");
+    };
+    const tm = new TaskManager({ invoke });
+    const created = await tm.create(bgBody);
+    await expect(tm.run(created.id)).rejects.toThrow(/invokeMode/);
+    expect((await tm.get(created.id))?.status).toBe("pending");
+  });
+});
+
 describe("taskEventToSSE mapper", () => {
   const task = {
     id: "t1",

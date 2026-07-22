@@ -82,6 +82,8 @@ import { redirectStdioToLogFile } from "./log-redirect";
 import { InvocationManager } from "./invocation-manager";
 import { TaskManager } from "./task-manager";
 import { launchTask, realTmuxRunner } from "./task-launcher";
+import { noInvokeModeMessage } from "./invokers/helpers";
+import type { InvokeInput } from "./invokers/types";
 import { Notifier, buildStateChangedPayload } from "./notifier";
 import { createNotifyDelivery } from "./notify-delivery";
 import { performJump, type JumpDeps } from "./notify-jump";
@@ -280,6 +282,27 @@ export class Daemon {
           runTmux: realTmuxRunner,
           prefs: await getPreferences(),
         }),
+      // Background tasks route to the invoke subsystem. Throws for a
+      // non-invokable agent so the run route returns 400.
+      invoke: async (task) => {
+        const agent = this.agents.find((a) => a.name === task.agent);
+        if (!agent) throw new Error(`Unknown agent: ${task.agent}`);
+        if (!agent.invokeMode && agent.name !== "claude") {
+          throw new Error(noInvokeModeMessage(agent));
+        }
+        const prefs = await getPreferences();
+        const invocationId = "inv_" + crypto.randomUUID().replace(/-/g, "");
+        const input: InvokeInput = {
+          invocationId,
+          agent,
+          prompt: task.prompt,
+          cwd: task.project,
+          timeoutMs: 300_000,
+          ...(agent.name === "claude" ? { claudeBinary: prefs.command } : {}),
+        };
+        const result = this.invocationManager.invoke(input);
+        return { invocationId, result };
+      },
     });
 
     // Resolve the daemon's own binaries once (mirroring how it resolves every
