@@ -147,6 +147,9 @@ function createServer(
           stderr: "",
         }),
         prefs: {},
+        // Fake delivery so the launcher never touches real tmux.
+        sendLiteral: async () => true,
+        sendPrompt: async () => true,
       }),
   });
   const resolveHookAdapter = getHookAdapter ?? ((_name: string) => null);

@@ -22,6 +22,7 @@ import { getAgentExecutable, type AgentDef } from "../lib/agents";
 import type { Preferences } from "../lib/preferences";
 import type { TaskInstance } from "../lib/task";
 import { isPromptReady } from "./invokers/helpers";
+import { sendLiteralToPane, sendPromptToPane } from "./pane-io";
 
 const READY_TIMEOUT_MS = 15_000;
 const POLL_INTERVAL_MS = 250;
@@ -57,6 +58,15 @@ export interface TaskLauncherDeps {
   /** Clock + sleep, injected so the ready-wait loop is testable. */
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Delivery helpers, injected so tests don't drive real tmux. Default to the
+   * proven pane-io helpers. `sendLiteral` types a command (`-l` + a delayed
+   * separate Enter). `sendPrompt` uses a bracketed paste + delayed Enter — the
+   * ONLY reliable way to submit into a TUI composer (a batched
+   * `send-keys <text> Enter` leaves the text unsubmitted).
+   */
+  sendLiteral?: (pane: string, text: string, enter: boolean) => Promise<boolean>;
+  sendPrompt?: (pane: string, text: string, enter: boolean) => Promise<boolean>;
 }
 
 /** Single-quote-escape one argv token for a POSIX shell. */
@@ -95,17 +105,6 @@ async function capture(deps: TaskLauncherDeps, paneId: string): Promise<string> 
   return stripAnsi(res.stdout);
 }
 
-async function sendKeys(
-  deps: TaskLauncherDeps,
-  target: string,
-  text: string,
-): Promise<void> {
-  const res = await deps.runTmux(["send-keys", "-t", target, text, "Enter"]);
-  if (res.code !== 0) {
-    throw new Error(`tmux send-keys failed: ${res.stderr.trim()}`);
-  }
-}
-
 /**
  * Launch a task into a pane per its target. Throws on an unsupported target,
  * a missing working directory, a missing `targetRef` for `send-to-existing`,
@@ -118,6 +117,8 @@ export async function launchTask(
   const now = deps.now ?? (() => Date.now());
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
+  const sendLiteral = deps.sendLiteral ?? sendLiteralToPane;
+  const sendPrompt = deps.sendPrompt ?? sendPromptToPane;
 
   if (task.target === "new-window" || task.target === "split") {
     // Verify the working directory exists before spawning; it may have been
@@ -143,7 +144,9 @@ export async function launchTask(
     // Baseline the pre-launch pane (bare shell) so the ready check requires a
     // transition, not just a glyph the shell prompt already shows.
     const baseline = await capture(deps, paneId);
-    await sendKeys(deps, paneId, buildLaunchCommand(task, deps));
+    if (!(await sendLiteral(paneId, buildLaunchCommand(task, deps), true))) {
+      throw new Error("failed to send launch command to pane");
+    }
 
     // Passthrough: the raw command is the whole launch; nothing else to send.
     if (task.command && task.command.length > 0) {
@@ -162,7 +165,11 @@ export async function launchTask(
       }
       // On timeout we send anyway (best effort) rather than failing the task.
     }
-    await sendKeys(deps, paneId, task.prompt);
+    // Prompt via bracketed paste + delayed Enter — a batched send-keys would
+    // leave the text unsubmitted in the composer.
+    if (!(await sendPrompt(paneId, task.prompt, true))) {
+      throw new Error("failed to send prompt to pane");
+    }
     return { paneId };
   }
 
@@ -170,11 +177,13 @@ export async function launchTask(
     if (!task.targetRef) {
       throw new Error("send-to-existing requires targetRef");
     }
-    const text =
+    // A command is a shell line (sendLiteral); a prompt goes into the existing
+    // agent's composer (sendPrompt).
+    const ok =
       task.command && task.command.length > 0
-        ? task.command.map(shellQuote).join(" ")
-        : task.prompt;
-    await sendKeys(deps, task.targetRef, text);
+        ? await sendLiteral(task.targetRef, task.command.map(shellQuote).join(" "), true)
+        : await sendPrompt(task.targetRef, task.prompt, true);
+    if (!ok) throw new Error("failed to send to pane");
     return {};
   }
 

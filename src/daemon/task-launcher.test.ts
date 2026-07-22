@@ -25,7 +25,8 @@ function makeTask(over: Partial<TaskInstance> = {}): TaskInstance {
   };
 }
 
-/** Fake tmux: pane id for creates, scripted captures, records send-keys. */
+/** Fake tmux: pane id for creates, scripted captures. No send-keys here —
+ *  delivery goes through the injected sendLiteral/sendPrompt. */
 function fakeTmux(opts: { paneId?: string; captures?: string[] } = {}) {
   const paneId = opts.paneId ?? "%9";
   const captures = opts.captures ?? [""];
@@ -42,17 +43,32 @@ function fakeTmux(opts: { paneId?: string; captures?: string[] } = {}) {
       capIdx++;
       return { code: 0, stdout: out, stderr: "" };
     }
-    return { code: 0, stdout: "", stderr: "" }; // send-keys
+    return { code: 0, stdout: "", stderr: "" };
   };
   return { runTmux, calls };
 }
 
-/** Send-keys payloads (the text arg), in order. */
-const sentTexts = (calls: string[][]) =>
-  calls.filter((a) => a[0] === "send-keys").map((a) => a[3]);
+type Sent = { pane: string; text: string; enter: boolean };
+function recorder(ok = true) {
+  const literal: Sent[] = [];
+  const prompt: Sent[] = [];
+  return {
+    literal,
+    prompt,
+    sendLiteral: async (pane: string, text: string, enter: boolean) => {
+      literal.push({ pane, text, enter });
+      return ok;
+    },
+    sendPrompt: async (pane: string, text: string, enter: boolean) => {
+      prompt.push({ pane, text, enter });
+      return ok;
+    },
+  };
+}
 
 function deps(
   runTmux: TmuxRunner,
+  rec: ReturnType<typeof recorder>,
   over: Partial<TaskLauncherDeps> = {},
 ): TaskLauncherDeps {
   return {
@@ -61,6 +77,8 @@ function deps(
     prefs: {},
     now: () => 0,
     sleep: async () => {},
+    sendLiteral: rec.sendLiteral,
+    sendPrompt: rec.sendPrompt,
     ...over,
   };
 }
@@ -98,73 +116,89 @@ describe("buildLaunchCommand", () => {
 });
 
 describe("launchTask interactive (adaptive)", () => {
-  it("launches the binary, waits for ready, then sends the prompt", async () => {
-    const { runTmux, calls } = fakeTmux({
-      paneId: "%12",
-      captures: ["$ ", "❯ "], // baseline (shell), then ready
-    });
-    const now = (() => {
-      let t = 0;
-      return () => (t += 100);
-    })();
+  it("launches the binary (sendLiteral) then submits the prompt (sendPrompt)", async () => {
+    const { runTmux } = fakeTmux({ paneId: "%12", captures: ["$ ", "❯ "] });
+    const rec = recorder();
+    let t = 0;
     const result = await launchTask(
       makeTask(),
-      deps(runTmux, { getAgentByType: () => claudeAgent, now }),
-    );
-    expect(result.paneId).toBe("%12");
-    // launch command then the prompt — never a --prompt flag.
-    expect(sentTexts(calls)).toEqual(["claude", "do it"]);
-    expect(JSON.stringify(calls)).not.toContain("--prompt");
-  });
-
-  it("sends the prompt immediately when the agent has no readyPattern", async () => {
-    const { runTmux, calls } = fakeTmux({ captures: ["$ "] });
-    await launchTask(
-      makeTask({ agent: "codex" }),
-      deps(runTmux, {
-        getAgentByType: () => ({}) as unknown as AgentDef,
+      deps(runTmux, rec, {
+        getAgentByType: () => claudeAgent,
+        now: () => (t += 100),
       }),
     );
-    expect(sentTexts(calls)).toEqual(["codex", "do it"]);
-    // Only the pre-launch baseline capture; no ready polling.
-    expect(calls.filter((a) => a[0] === "capture-pane")).toHaveLength(1);
+    expect(result.paneId).toBe("%12");
+    // launch via sendLiteral, prompt via sendPrompt — both with Enter.
+    expect(rec.literal).toEqual([{ pane: "%12", text: "claude", enter: true }]);
+    expect(rec.prompt).toEqual([{ pane: "%12", text: "do it", enter: true }]);
   });
 
-  it("sends the prompt after timeout when ready never matches", async () => {
-    const { runTmux, calls } = fakeTmux({ captures: ["$ "] }); // never ready
+  it("submits the prompt immediately when the agent has no readyPattern", async () => {
+    const { runTmux } = fakeTmux({ captures: ["$ "] });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ agent: "codex" }),
+      deps(runTmux, rec, { getAgentByType: () => ({}) as unknown as AgentDef }),
+    );
+    expect(rec.literal[0].text).toBe("codex");
+    expect(rec.prompt[0].text).toBe("do it");
+  });
+
+  it("submits after timeout when ready never matches", async () => {
+    const { runTmux } = fakeTmux({ captures: ["$ "] });
+    const rec = recorder();
     let t = 0;
-    const now = () => (t += 20_000); // jump past the timeout each check
     await launchTask(
       makeTask(),
-      deps(runTmux, { getAgentByType: () => claudeAgent, now }),
+      deps(runTmux, rec, {
+        getAgentByType: () => claudeAgent,
+        now: () => (t += 20_000),
+      }),
     );
-    expect(sentTexts(calls)).toEqual(["claude", "do it"]);
+    expect(rec.prompt).toEqual([{ pane: "%9", text: "do it", enter: true }]);
   });
 
-  it("passthrough command is launched verbatim with no prompt send", async () => {
-    const { runTmux, calls } = fakeTmux({});
-    await launchTask(
-      makeTask({ command: ["claude", "-p", "x"] }),
-      deps(runTmux),
-    );
-    expect(sentTexts(calls)).toEqual(["'claude' '-p' 'x'"]); // no second send
+  it("passthrough command is launched verbatim with no prompt submit", async () => {
+    const { runTmux } = fakeTmux({});
+    const rec = recorder();
+    await launchTask(makeTask({ command: ["claude", "-p", "x"] }), deps(runTmux, rec));
+    expect(rec.literal).toEqual([
+      { pane: "%9", text: "'claude' '-p' 'x'", enter: true },
+    ]);
+    expect(rec.prompt).toHaveLength(0);
   });
 
   it("uses split-window for a split target", async () => {
     const { runTmux, calls } = fakeTmux({ captures: ["$ "] });
+    const rec = recorder();
     await launchTask(
       makeTask({ target: "split", agent: "codex" }),
-      deps(runTmux, { getAgentByType: () => ({}) as unknown as AgentDef }),
+      deps(runTmux, rec, { getAgentByType: () => ({}) as unknown as AgentDef }),
     );
     expect(calls[0][0]).toBe("split-window");
   });
 
   it("throws before any tmux call when the working dir is missing", async () => {
     const { runTmux, calls } = fakeTmux({});
+    const rec = recorder();
     await expect(
-      launchTask(makeTask({ project: "/no/such/dir" }), deps(runTmux)),
+      launchTask(makeTask({ project: "/no/such/dir" }), deps(runTmux, rec)),
     ).rejects.toThrow(/Working directory does not exist/);
     expect(calls).toHaveLength(0);
+    expect(rec.literal).toHaveLength(0);
+  });
+
+  it("throws when the prompt fails to send", async () => {
+    const { runTmux } = fakeTmux({ captures: ["$ "] });
+    const rec = recorder(false); // sends fail
+    await expect(
+      launchTask(
+        makeTask({ agent: "codex" }),
+        deps(runTmux, rec, {
+          getAgentByType: () => ({}) as unknown as AgentDef,
+        }),
+      ),
+    ).rejects.toThrow(/failed to send/);
   });
 });
 
@@ -172,31 +206,32 @@ describe("launchTask other targets", () => {
   it("send-to-existing requires targetRef", async () => {
     const { runTmux } = fakeTmux({});
     await expect(
-      launchTask(makeTask({ target: "send-to-existing" }), deps(runTmux)),
+      launchTask(makeTask({ target: "send-to-existing" }), deps(runTmux, recorder())),
     ).rejects.toThrow(/targetRef/);
   });
 
-  it("send-to-existing sends the prompt to the referenced pane", async () => {
-    const { runTmux, calls } = fakeTmux({});
+  it("send-to-existing submits the prompt into the referenced pane", async () => {
+    const { runTmux } = fakeTmux({});
+    const rec = recorder();
     const result = await launchTask(
       makeTask({ target: "send-to-existing", targetRef: "%3" }),
-      deps(runTmux),
+      deps(runTmux, rec),
     );
     expect(result.paneId).toBeUndefined();
-    expect(calls).toEqual([["send-keys", "-t", "%3", "do it", "Enter"]]);
+    expect(rec.prompt).toEqual([{ pane: "%3", text: "do it", enter: true }]);
   });
 
   it("background is rejected by the pane launcher", async () => {
     const { runTmux } = fakeTmux({});
     await expect(
-      launchTask(makeTask({ target: "background" }), deps(runTmux)),
+      launchTask(makeTask({ target: "background" }), deps(runTmux, recorder())),
     ).rejects.toThrow(/background/);
   });
 
   it("new-session is rejected", async () => {
     const { runTmux } = fakeTmux({});
     await expect(
-      launchTask(makeTask({ target: "new-session" as never }), deps(runTmux)),
+      launchTask(makeTask({ target: "new-session" as never }), deps(runTmux, recorder())),
     ).rejects.toThrow(/Unsupported task target/);
   });
 });
