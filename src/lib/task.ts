@@ -123,13 +123,16 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
   }
   if (!project) throw new Error("Task project is required");
   if (!agent) throw new Error("Task agent is required");
-  if (!prompt) throw new Error("Task prompt is required");
+  // A passthrough `command` is self-contained, so the prompt is optional then.
+  if (!prompt && !(spec.command && spec.command.length > 0)) {
+    throw new Error("Task prompt is required");
+  }
 
   return {
     project,
     target,
     agent,
-    prompt,
+    prompt: prompt ?? "",
     ...(spec.targetRef !== undefined ? { targetRef: spec.targetRef } : {}),
     ...(spec.command !== undefined ? { command: spec.command } : {}),
     ...(spec.worktree !== undefined ? { worktree: spec.worktree } : {}),

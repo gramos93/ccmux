@@ -115,6 +115,20 @@ describe("ccmux task create", () => {
       true,
     );
   });
+
+  it("--bg sets target=background", async () => {
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await runCli("create", "-d", DIR, "--bg", "--prompt", "hi");
+    expect((createCall()!.body as { target: string }).target).toBe("background");
+  });
+
+  it("captures the `-- <args>` tail as command", async () => {
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await runCli("create", "-d", DIR, "--agent", "codex", "--", "codex", "exec", "hi");
+    const body = createCall()!.body as { command: string[]; agent: string };
+    expect(body.command).toEqual(["codex", "exec", "hi"]);
+    expect(body.agent).toBe("codex");
+  });
 });
 
 describe("ccmux task run/rm prefix resolution", () => {

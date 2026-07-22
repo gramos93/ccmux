@@ -23,17 +23,17 @@
 
 ## 4. CLI (`src/commands/task.ts`)
 
-- [ ] 4.1 Add `--bg` to `create` → sets `target: "background"`
-- [ ] 4.2 Enable commander passthrough (`enablePositionalOptions`/`passThroughOptions`) and capture the tail after `--` as `command`; send it in the create body
-- [ ] 4.3 Reflect `background`/`command` in `list` output where useful (e.g. show `bg` or the command)
+- [x] 4.1 Add `--bg` to `create` → sets `target: "background"`
+- [x] 4.2 Enable commander passthrough (`enablePositionalOptions`/`passThroughOptions`) and capture the tail after `--` as `command`; send it in the create body
+- [x] 4.3 Reflect `background`/`command` in `list` output where useful (e.g. show `bg` or the command)
 
 ## 5. Tests
 
 - [x] 5.1 Launcher: adaptive command uses `executable`/`resumeCommand` (not `--prompt`); ready-then-send delivers the prompt after a matching capture (fake tmux runner + fake capture); passthrough `command` launched verbatim; a missing working directory throws before any tmux call
 - [x] 5.2 Manager: `background` run calls the injected invoke bridge with a correct `InvokeInput`, records `invocationId`, stays `running`, then patches `done`/`failed` on resolve (inject a fake bridge); non-invokable agent errors without leaving `running`
 - [x] 5.3 Manager: interactive run still records `paneId` + correlates (regression against the fake launcher)
-- [ ] 5.4 Model: `background` target validates; `command` round-trips through create→get
-- [ ] 5.5 CLI: `--bg` sets target background; `-- <args>` captured as `command` (mock fetch, assert body)
+- [x] 5.4 Model: `background` target validates; `command` round-trips through create→get
+- [x] 5.5 CLI: `--bg` sets target background; `-- <args>` captured as `command` (mock fetch, assert body)
 
 ## 6. Verification
 

@@ -99,4 +99,15 @@ describe("validateNewTask", () => {
     const spec = validateNewTask({ ...base, target: "background" });
     expect(spec.target).toBe("background");
   });
+
+  it("allows a missing prompt when a passthrough command is present", () => {
+    const spec = validateNewTask({
+      project: "p",
+      target: "new-window",
+      agent: "codex",
+      command: ["codex", "exec", "hi"],
+    });
+    expect(spec.command).toEqual(["codex", "exec", "hi"]);
+    expect(spec.prompt).toBe("");
+  });
 });

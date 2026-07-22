@@ -28,6 +28,9 @@ program
   .description(
     "Track all your AI coding agents (Claude Code, Codex, Cursor, ...) in tmux and jump to the one that needs you",
   )
+  // Lets `ccmux task create -- <raw agent args>` pass its tail through
+  // untouched (see src/commands/task.ts).
+  .enablePositionalOptions()
   .version(pkg.version);
 
 // Register commands

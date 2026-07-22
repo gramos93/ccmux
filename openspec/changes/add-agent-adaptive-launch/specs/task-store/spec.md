@@ -8,7 +8,7 @@ The `target` field SHALL be one of `new-window`, `split`, `send-to-existing`, or
 
 The optional `targetRef` field SHALL identify the tmux pane or session that a `split` or `send-to-existing` target acts on. The data model persists the field; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it.
 
-The optional `command` field SHALL be a raw argv (`string[]`) that, when present, is launched verbatim instead of a command built from the agent adapter. It is the passthrough escape hatch; the data model only persists it.
+The optional `command` field SHALL be a raw argv (`string[]`) that, when present, is launched verbatim instead of a command built from the agent adapter. It is the passthrough escape hatch; the data model only persists it. When `command` is present, `prompt` is NOT required (the command is self-contained).
 
 Instances MAY additionally carry an optional `invocationId` link field, set when a `background` task is dispatched to the invoke subsystem, so the task can be joined to its invocation.
 

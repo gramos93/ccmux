@@ -51,7 +51,10 @@ async function runTask(id: string): Promise<TaskInstance> {
 }
 
 export function createTaskCommand(): Command {
-  const task = new Command("task").description("Create, run, and track tasks");
+  // Required so `create` can use passThroughOptions for the `-- <raw>` tail.
+  const task = new Command("task")
+    .description("Create, run, and track tasks")
+    .enablePositionalOptions();
 
   task
     .command("list")
@@ -84,6 +87,10 @@ export function createTaskCommand(): Command {
   task
     .command("create")
     .description("Create a task (optionally run it immediately)")
+    // Pass raw agent args after `--`; `passThroughOptions` stops create from
+    // parsing them as its own flags (needs enablePositionalOptions on `task`).
+    .passThroughOptions()
+    .argument("[cmd...]", "raw agent command after `--` (passthrough)")
     .option(
       "-d, --dir <path>",
       "Working directory / project (default: current dir)",
@@ -91,19 +98,27 @@ export function createTaskCommand(): Command {
     .option("--agent <name>", "Agent to run (default: config default)")
     .option("--prompt <text>", "Prompt to send")
     .option("--template <name>", "Named template to apply")
-    .option("--target <target>", "new-window | split | send-to-existing")
+    .option(
+      "--target <target>",
+      "new-window | split | send-to-existing | background",
+    )
     .option("--target-ref <pane>", "Pane/session for split/send-to-existing")
+    .option("--bg", "Run headless via the invoke subsystem (target=background)")
     .option("--run", "Run the task immediately after creating it")
     .action(
-      async (options: {
-        dir?: string;
-        agent?: string;
-        prompt?: string;
-        template?: string;
-        target?: string;
-        targetRef?: string;
-        run?: boolean;
-      }) => {
+      async (
+        cmd: string[],
+        options: {
+          dir?: string;
+          agent?: string;
+          prompt?: string;
+          template?: string;
+          target?: string;
+          targetRef?: string;
+          bg?: boolean;
+          run?: boolean;
+        },
+      ) => {
         // `bin/ccmux` cd's into the repo before running, so process.cwd() is
         // the install dir; it preserves the real caller dir in
         // CCMUX_CALLER_PWD. Prefer that for the default working directory.
@@ -118,14 +133,15 @@ export function createTaskCommand(): Command {
         await ensureDaemon();
         // Omit unset agent/target so the daemon's default cascade (config
         // `defaults` → project → template → built-in) applies. JSON.stringify
-        // drops `undefined` keys.
+        // drops `undefined` keys. `--bg` is sugar for target=background.
         const res = await post("/tasks", {
           project,
           agent: options.agent,
           prompt: options.prompt,
           template: options.template,
-          target: options.target,
+          target: options.bg ? "background" : options.target,
           targetRef: options.targetRef,
+          command: cmd.length > 0 ? cmd : undefined,
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
