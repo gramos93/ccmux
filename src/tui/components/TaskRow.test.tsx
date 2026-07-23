@@ -1,7 +1,7 @@
 import { describe, it, expect, afterEach } from "bun:test";
 import { testRender } from "@opentui/solid";
 import type { JSX } from "solid-js";
-import { TaskRow, taskStatusColor } from "./TaskRow";
+import { TaskRow, taskStatusColor, taskKindLabel } from "./TaskRow";
 import { theme } from "../theme";
 import { mockTask, mockEnrichedSession } from "./test-helpers";
 
@@ -22,6 +22,14 @@ describe("taskStatusColor", () => {
     expect(taskStatusColor("done")).toBe(theme.green);
     expect(taskStatusColor("failed")).toBe(theme.red);
     expect(taskStatusColor("pending")).toBe(theme.overlay);
+  });
+});
+
+describe("taskKindLabel", () => {
+  it("distinguishes background from pane tasks", () => {
+    expect(taskKindLabel({ target: "background" })).toBe("bg");
+    expect(taskKindLabel({ target: "new-window" })).toBe("pane");
+    expect(taskKindLabel({ target: "split" })).toBe("pane");
   });
 });
 

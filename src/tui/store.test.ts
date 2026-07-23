@@ -2617,6 +2617,30 @@ describe("store", () => {
       expect(store.state.view).toBe("sessions");
     });
 
+    it("cycleTaskGroupBy cycles status → project → none → status", () => {
+      const store = createTUIStore();
+      expect(store.state.taskGroupBy).toBe("status");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("project");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("none");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("status");
+    });
+
+    it("moveTaskSelection walks task rows across status groups (skips headers)", () => {
+      const store = createTUIStore();
+      store.actions.reconcileTasks([
+        mockTask({ id: "r1", status: "running" }),
+        mockTask({ id: "s1", status: "stopped" }),
+      ]);
+      // Grouped by status → flat: [hdr running, r1, hdr stopped, s1].
+      store.actions.moveTaskSelection(1); // first move → first row
+      expect(store.state.selectedTaskId).toBe("r1");
+      store.actions.moveTaskSelection(1); // next task row, past the header
+      expect(store.state.selectedTaskId).toBe("s1");
+    });
+
     it("moveTaskSelection clamps at the ends", () => {
       const store = createTUIStore();
       store.actions.reconcileTasks([mockTask({ id: "a" }), mockTask({ id: "b" })]);

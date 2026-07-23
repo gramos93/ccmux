@@ -30,6 +30,11 @@ function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
+/** bg = headless invoke; pane = an interactive tmux pane target. */
+export function taskKindLabel(task: { target: string }): string {
+  return task.target === "background" ? "bg" : "pane";
+}
+
 export interface TaskRowProps {
   task: TaskInstance;
   selected: boolean;
@@ -49,6 +54,11 @@ export const TaskRow: Component<TaskRowProps> = (props) => {
       </text>
       <text fg={agentColorFor(props.task.agent)}>
         {props.task.agent.padEnd(9)}
+      </text>
+      <text
+        fg={props.task.target === "background" ? theme.mauve : theme.overlay}
+      >
+        {taskKindLabel(props.task).padEnd(5)}
       </text>
       <text fg={theme.text}>{`${basename(props.task.project)}  `}</text>
       <Show when={props.task.status === "running" ? props.liveSession : null}>

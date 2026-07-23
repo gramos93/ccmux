@@ -35,6 +35,22 @@ There is **no `view` field** — only a `sidebar` boolean threaded from the CLI 
 
 Additive: new store field/slice, new components, new keybind. No protocol/daemon change (the wire already carries everything). `sidebar` semantics unchanged. Rollback = revert; the daemon is unaffected.
 
+## Revision (post-MVP feedback): grouped, session-viewer-like board
+
+Live use of the flat MVP surfaced four gaps; this revision addresses them.
+
+**D6 — Group headers, default group-by `status`, cyclable to `project`.** The board renders group headers like the session pane. Default groups by lifecycle `status` (so the `stopped` group *is* the resumable list); `b` cycles `status → project → none`. A new `taskGroupBy` store field + a task-grouping util (parallel to `utils/grouping.ts`, keyed on `TaskInstance`). Selection/`j`/`k` skip headers, mirroring the session flat-item model.
+
+**D7 — Kind indicator per row.** Show whether a task is background (headless invoke) or an interactive pane, from `task.target` (`background` vs `new-window`/`split`/`send-to-existing`). A short badge in the row; `kind` is also a groupable dimension later if wanted.
+
+**D8 — Parallel `TaskList`, not a generalized shared list.** Build `TaskList` (its own scrollbox + group headers + `TaskRow`) copying the `SessionList` patterns, rather than making the session pipeline item-agnostic. Chosen per user call: lower blast-radius on the proven session path, at the cost of some duplication. `TaskGroupHeader` may reuse `GroupHeader` where the shape fits.
+
+**D9 — Fix the view-swap scroll bug directly.** Root cause: toggling to the board unmounts `SessionList` (it's the `<Show>` fallback); on remount its scrollbox starts zero-size and the scroll-into-view effect doesn't re-fire, so `j/k` moves selection but `scrollTo` clamps against a stale viewport — "stops before the end." Since a parallel `TaskList` keeps the `<Show>` swap, fix `SessionList` to re-measure on (re)mount: bump the `scrollboxLayout` signal when the scrollbox ref is assigned / first lays out, so the scroll effect re-runs with real dimensions. (Full-reuse would have sidestepped this by never unmounting; with the parallel choice it's a targeted fix.)
+
+**D10 — `done` is background-only (confirmed).** Interactive tasks are `pending → running → stopped`; only invoke tasks reach `done`/`failed`. The board's status grouping reflects this. Whether interactive tasks should be markable `done` is left open (below).
+
 ## Open Questions
 
-- Should `enter` on a *running* task jump to its live session (reusing the session activate/switch path)? Small and natural, but deferred to keep this slice's actions to resume/delete; easy to add once the board lands.
+- Should `enter` on a *running* task jump to its live session (reusing the session activate/switch path)? Deferred.
+- Should interactive tasks have a `done` terminal (user-marked), or stay `stopped`-until-`rm`? Currently `done` is bg-only (D10).
+- Nested grouping ("status **then** project" as two levels) vs a single cyclable dimension: shipping single-level cyclable first (D6); nesting can follow.

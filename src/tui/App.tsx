@@ -50,7 +50,7 @@ import {
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
-import { TaskBoard } from "./components/TaskBoard";
+import { TaskList } from "./components/TaskList";
 import { SearchInput } from "./components/SearchInput";
 import { Preview } from "./components/Preview";
 import { Toast } from "./components/Toast";
@@ -942,6 +942,8 @@ export function App(props: AppProps) {
         resumeSelectedTask();
       } else if (key === "x") {
         deleteSelectedTask();
+      } else if (key === "b") {
+        store.actions.cycleTaskGroupBy();
       }
       event.preventDefault();
       return;
@@ -1324,8 +1326,9 @@ export function App(props: AppProps) {
               </>
             }
           >
-            <TaskBoard
-              tasks={store.state.tasks}
+            <TaskList
+              items={store.taskFlatItems()}
+              selectedIndex={store.selectedTaskFlatIndex()}
               selectedTaskId={store.state.selectedTaskId}
               getSessionById={getSessionById}
               iconStyle={store.state.iconStyle}

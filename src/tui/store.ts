@@ -21,6 +21,13 @@ import type {
 } from "../types";
 import type { ConnectionState } from "./utils/sse";
 import type { TaskInstance } from "../lib/task";
+import {
+  buildTaskFlatItems,
+  taskFlatIndex,
+  TASK_GROUP_BY_ORDER,
+  type TaskFlatItem,
+  type TaskGroupBy,
+} from "./utils/task-grouping";
 import type { IconStyle } from "../lib/icons";
 import type {
   ColumnsConfig,
@@ -87,6 +94,7 @@ interface TUIState {
   view: "sessions" | "tasks";
   tasks: TaskInstance[];
   selectedTaskId: string | null;
+  taskGroupBy: TaskGroupBy;
 }
 
 interface TUIStoreOptions {
@@ -360,6 +368,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     view: "sessions",
     tasks: [],
     selectedTaskId: null,
+    taskGroupBy: "status",
   });
 
   // Effect: capture pane content for search (debounced)
@@ -631,6 +640,15 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     );
   });
 
+  // Task board flat items (headers + task rows) for the current grouping.
+  const taskFlatItems = createMemo((): TaskFlatItem[] =>
+    buildTaskFlatItems(state.tasks, state.taskGroupBy),
+  );
+  // Flat-item index of the selected task row (for scroll-into-view).
+  const selectedTaskFlatIndex = createMemo(() =>
+    taskFlatIndex(taskFlatItems(), state.selectedTaskId),
+  );
+
   const selectedIndex = trackedMemo("selectedIndex", () => {
     const items = flatItems();
 
@@ -871,18 +889,28 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       }
     },
 
-    /** Move task-board selection by delta over the current task list. With no
-     *  current selection, any move lands on the first task. */
+    /** Move task-board selection by delta over the task rows in the current
+     *  grouping (headers are skipped). With no current selection, any move
+     *  lands on the first task row. */
     moveTaskSelection(delta: number) {
-      const tasks = state.tasks;
-      if (tasks.length === 0) return;
-      const cur = tasks.findIndex((t) => t.id === state.selectedTaskId);
+      const rows = taskFlatItems().filter(
+        (i): i is Extract<TaskFlatItem, { type: "task" }> => i.type === "task",
+      );
+      if (rows.length === 0) return;
+      const cur = rows.findIndex((r) => r.task.id === state.selectedTaskId);
       if (cur === -1) {
-        setState("selectedTaskId", tasks[0].id);
+        setState("selectedTaskId", rows[0].task.id);
         return;
       }
-      const nextIdx = Math.max(0, Math.min(tasks.length - 1, cur + delta));
-      setState("selectedTaskId", tasks[nextIdx].id);
+      const nextIdx = Math.max(0, Math.min(rows.length - 1, cur + delta));
+      setState("selectedTaskId", rows[nextIdx].task.id);
+    },
+
+    /** Cycle the task board grouping: status → project → none. */
+    cycleTaskGroupBy() {
+      const i = TASK_GROUP_BY_ORDER.indexOf(state.taskGroupBy);
+      const next = TASK_GROUP_BY_ORDER[(i + 1) % TASK_GROUP_BY_ORDER.length];
+      setState("taskGroupBy", next);
     },
 
     /** An invoke worker began executing (invocation_started SSE event). */
@@ -1353,6 +1381,8 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     selectedGroupSessions,
     collapsedGroups,
     pinnedGroups,
+    taskFlatItems,
+    selectedTaskFlatIndex,
     actions,
     tick,
     bumpTick: () => setTick((t) => t + 1),

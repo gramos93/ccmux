@@ -61,3 +61,26 @@ From the task board the user SHALL be able to resume a `stopped` task and delete
 
 - **WHEN** the selected row is not `stopped`
 - **THEN** the resume action does nothing (or is not offered)
+
+### Requirement: Task board grouping
+
+The task board SHALL group rows under headers, mirroring the session pane. It SHALL default to grouping by lifecycle `status` (so the `stopped` group surfaces the resumable set) and SHALL allow cycling the grouping dimension (at least `status` and `project`). Navigation SHALL skip headers and move between task rows.
+
+#### Scenario: Default grouping by status
+
+- **WHEN** the board is shown
+- **THEN** rows are grouped under status headers, with a `stopped` group listing resumable tasks
+
+#### Scenario: Cycle the grouping dimension
+
+- **WHEN** the user cycles grouping
+- **THEN** the board regroups (e.g. by project) and headers update accordingly
+
+### Requirement: Task kind indicator
+
+Each task row SHALL indicate its execution kind — background (headless invoke) versus an interactive pane — derived from the task's `target`.
+
+#### Scenario: Background vs pane is distinguishable
+
+- **WHEN** the board renders a `background` task and a `new-window` task
+- **THEN** each row shows a kind indicator distinguishing headless from interactive-pane tasks

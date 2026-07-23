@@ -37,3 +37,20 @@
 - [x] 6.2 `bun test` passes (new suites included)
 - [x] 6.3 **Renderer check (mandatory, AGENTS.md):** launch `ccmux picker` in a detached tmux session (`tmux new-session -d -s ccmux-verify -x 200 -y 50`), create a couple of tasks (one running, one stopped) via the daemon, toggle to the board with `t`, and `capture-pane` to confirm rows render (status colors, agent, live-activity for running, short id) and the empty state reads well; resize to a narrow viewport and re-capture. Tear down the session.
 - [x] 6.4 Confirm no daemon/protocol changes (TUI-only slice)
+
+## 7. Grouped TaskList rework (post-MVP feedback)
+
+- [x] 7.1 Task grouping util (parallel to `utils/grouping.ts`): build flat items (headers + task rows) grouped by a dimension; `taskGroupBy: "status" | "project" | "none"` (default `status`, order status→project→none)
+- [x] 7.2 `taskGroupBy` store field + `cycleTaskGroupBy` action; `moveTaskSelection` walks the flat items (skips headers)
+- [x] 7.3 `TaskList.tsx`: own scrollbox + group headers (reuse `GroupHeader` where it fits) + `TaskRow`, mirroring `SessionList` (scroll-into-view effect included)
+- [x] 7.4 Swap `<TaskBoard>` for `<TaskList>` in the App view branch; `b` cycles task grouping while in the board
+- [x] 7.5 Add a kind indicator (bg vs pane) to `TaskRow` from `task.target`
+
+## 8. Fix view-swap scroll bug (`SessionList`)
+
+- [x] 8.1 Ensure the scroll-into-view effect re-runs after (re)mount: bump `scrollboxLayout` when the scrollbox ref is assigned / first lays out, so returning from the board scrolls the full session list again
+
+## 9. Verify rework
+
+- [x] 9.1 `bun run typecheck` + `bun test` (update/extend TaskList tests; grouping + kind)
+- [x] 9.2 Live capture: board shows status groups (stopped group = resumable), kind indicators, `b` regroups by project; then toggle back to sessions and confirm `j/k` scrolls to the very end of a long list
