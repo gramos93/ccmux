@@ -552,6 +552,35 @@ export function App(props: AppProps) {
     fetch(`${getDaemonUrl()}/tasks/${id}`, { method: "DELETE" }).catch(() => {});
   }
 
+  /** Enter on a task row: resume a stopped task, or jump to the live session
+   *  of a running/correlated one (mirrors `activateItem` for sessions). */
+  function activateSelectedTask() {
+    const task = store.state.tasks.find(
+      (t) => t.id === store.state.selectedTaskId,
+    );
+    if (!task) return;
+    if (task.status === "stopped") {
+      resumeSelectedTask();
+      return;
+    }
+    if (task.sessionId) {
+      const session = getSessionById(task.sessionId);
+      if (session?.tmuxPane) {
+        store.actions.setActiveSessionId(session.id);
+        selectPane(session.tmuxPane);
+      }
+    }
+  }
+
+  /** Quit the picker (or close the sidebar pane), matching the `q` case. */
+  function quitApp() {
+    if (props.sidebar) {
+      const selfPane = process.env.TMUX_PANE;
+      if (selfPane) Bun.spawn(["tmux", "kill-pane", "-t", selfPane]);
+    }
+    process.exit(0);
+  }
+
   function confirmDialogAction() {
     const action = store.state.confirmAction;
     const sessionId = store.state.confirmSessionId;
@@ -934,11 +963,15 @@ export function App(props: AppProps) {
     if (store.state.view === "tasks") {
       if (key === "escape") {
         store.actions.toggleView();
+      } else if (key === "q") {
+        quitApp();
       } else if (key === "j" || key === "down") {
         store.actions.moveTaskSelection(1);
       } else if (key === "k" || key === "up") {
         store.actions.moveTaskSelection(-1);
-      } else if (key === "r" || key === "return" || key === "enter") {
+      } else if (key === "return" || key === "enter") {
+        activateSelectedTask();
+      } else if (key === "r") {
         resumeSelectedTask();
       } else if (key === "x") {
         deleteSelectedTask();
