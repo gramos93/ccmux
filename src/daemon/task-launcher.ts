@@ -74,15 +74,33 @@ function shellQuote(token: string): string {
   return `'${token.replace(/'/g, "'\\''")}'`;
 }
 
+/** Whether an agent can be resumed (claude, or one with a `resumeCommand`). */
+export function isAgentResumable(agent: AgentDef | undefined): boolean {
+  return !!agent && (agent.name === "claude" || !!agent.resumeCommand);
+}
+
 /**
- * Build the interactive launch command for a task: the raw `command` argv
- * (shell-quoted) when present, else the agent's interactive binary with NO
- * prompt flag (the prompt is delivered separately after the agent is ready).
+ * Build the launch command for a task. With `opts.resume`, build the agent's
+ * *resume* command against `task.nativeSessionId` (claude → `<binary> --resume
+ * <id>`; else `resumeCommand` with `{id}` → native id). Otherwise: the raw
+ * `command` argv (shell-quoted) when present, else the agent's interactive
+ * binary with NO prompt flag (the prompt is delivered separately after ready).
  */
 export function buildLaunchCommand(
   task: TaskInstance,
   deps: Pick<TaskLauncherDeps, "getAgentByType" | "prefs">,
+  opts: { resume?: boolean } = {},
 ): string {
+  if (opts.resume) {
+    const native = task.nativeSessionId;
+    if (!native) throw new Error("cannot resume: task has no nativeSessionId");
+    if (task.agent === "claude") {
+      return `${deps.prefs.command ?? "claude"} --resume ${native}`;
+    }
+    const agent = deps.getAgentByType(task.agent);
+    if (agent?.resumeCommand) return agent.resumeCommand.replace("{id}", native);
+    throw new Error(`agent ${task.agent} does not support resume`);
+  }
   if (task.command && task.command.length > 0) {
     return task.command.map(shellQuote).join(" ");
   }
@@ -105,14 +123,25 @@ async function capture(deps: TaskLauncherDeps, paneId: string): Promise<string> 
   return stripAnsi(res.stdout);
 }
 
+/** Options for {@link launchTask}. `resume` launches the agent's resume
+ *  command into a fresh window; `prompt` (when set) is submitted after the
+ *  agent is ready (a follow-up turn). */
+export interface LaunchOpts {
+  resume?: boolean;
+  prompt?: string;
+}
+
 /**
- * Launch a task into a pane per its target. Throws on an unsupported target,
- * a missing working directory, a missing `targetRef` for `send-to-existing`,
- * or a tmux failure.
+ * Launch a task into a pane. Without `opts`, launches per the task's target.
+ * With `opts.resume`, always opens a fresh `new-window`, launches the agent's
+ * resume command, and submits `opts.prompt` only if one was given. Throws on
+ * an unsupported target, a missing working directory, a missing `targetRef`
+ * for `send-to-existing`, or a tmux failure.
  */
 export async function launchTask(
   task: TaskInstance,
   deps: TaskLauncherDeps,
+  opts: LaunchOpts = {},
 ): Promise<LaunchResult> {
   const now = deps.now ?? (() => Date.now());
   const sleep =
@@ -120,14 +149,18 @@ export async function launchTask(
   const sendLiteral = deps.sendLiteral ?? sendLiteralToPane;
   const sendPrompt = deps.sendPrompt ?? sendPromptToPane;
 
-  if (task.target === "new-window" || task.target === "split") {
+  // Shared: create a pane, send the launch command, and — when a prompt is
+  // given — ready-wait then submit it (bracketed paste + delayed Enter).
+  const runInPane = async (
+    tmuxCmd: "new-window" | "split-window",
+    launchCommand: string,
+    promptToSend: string | undefined,
+  ): Promise<LaunchResult> => {
     // Verify the working directory exists before spawning; it may have been
     // deleted between create and run (the CLI also fast-checks at create).
     if (!existsSync(task.project) || !statSync(task.project).isDirectory()) {
       throw new Error(`Working directory does not exist: ${task.project}`);
     }
-
-    const tmuxCmd = task.target === "split" ? "split-window" : "new-window";
     const create = await deps.runTmux([
       tmuxCmd,
       "-c",
@@ -144,33 +177,46 @@ export async function launchTask(
     // Baseline the pre-launch pane (bare shell) so the ready check requires a
     // transition, not just a glyph the shell prompt already shows.
     const baseline = await capture(deps, paneId);
-    if (!(await sendLiteral(paneId, buildLaunchCommand(task, deps), true))) {
+    if (!(await sendLiteral(paneId, launchCommand, true))) {
       throw new Error("failed to send launch command to pane");
     }
 
-    // Passthrough: the raw command is the whole launch; nothing else to send.
-    if (task.command && task.command.length > 0) {
-      return { paneId };
-    }
-
-    // Adaptive: wait for the agent's readyPattern, then deliver the prompt.
-    const readyPattern = deps.getAgentByType(task.agent)?.readyPattern;
-    if (readyPattern) {
-      const start = now();
-      while (now() - start < READY_TIMEOUT_MS) {
-        if (isPromptReady(await capture(deps, paneId), baseline, readyPattern)) {
-          break;
+    if (promptToSend !== undefined) {
+      const readyPattern = deps.getAgentByType(task.agent)?.readyPattern;
+      if (readyPattern) {
+        const start = now();
+        while (now() - start < READY_TIMEOUT_MS) {
+          if (
+            isPromptReady(await capture(deps, paneId), baseline, readyPattern)
+          ) {
+            break;
+          }
+          await sleep(POLL_INTERVAL_MS);
         }
-        await sleep(POLL_INTERVAL_MS);
+        // On timeout we send anyway (best effort) rather than failing.
       }
-      // On timeout we send anyway (best effort) rather than failing the task.
-    }
-    // Prompt via bracketed paste + delayed Enter — a batched send-keys would
-    // leave the text unsubmitted in the composer.
-    if (!(await sendPrompt(paneId, task.prompt, true))) {
-      throw new Error("failed to send prompt to pane");
+      if (!(await sendPrompt(paneId, promptToSend, true))) {
+        throw new Error("failed to send prompt to pane");
+      }
     }
     return { paneId };
+  };
+
+  // Resume: fresh window, resume command, optional follow-up prompt.
+  if (opts.resume) {
+    return runInPane(
+      "new-window",
+      buildLaunchCommand(task, deps, { resume: true }),
+      opts.prompt,
+    );
+  }
+
+  if (task.target === "new-window" || task.target === "split") {
+    const tmuxCmd = task.target === "split" ? "split-window" : "new-window";
+    // Passthrough: the raw command is the whole launch; no separate prompt.
+    const promptToSend =
+      task.command && task.command.length > 0 ? undefined : task.prompt;
+    return runInPane(tmuxCmd, buildLaunchCommand(task, deps), promptToSend);
   }
 
   if (task.target === "send-to-existing") {

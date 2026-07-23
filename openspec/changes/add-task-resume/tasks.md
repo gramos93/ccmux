@@ -1,8 +1,8 @@
 ## 1. Launcher resume mode (`src/daemon/task-launcher.ts`)
 
-- [ ] 1.1 `buildLaunchCommand(task, deps, opts?)`: when `opts.resume`, build the resume command — claude → `${prefs.command ?? "claude"} --resume ${task.nativeSessionId}`; else agent `resumeCommand` with `{id}` → `nativeSessionId`; else throw "agent does not support resume"
-- [ ] 1.2 `launchTask(task, deps, opts?: { resume?; prompt? })`: on `opts.resume`, force a `new-window` pane, launch the resume command via `sendLiteral`; if `opts.prompt` is given, ready-wait + `sendPrompt` (reuse the run tail), else skip; return `{ paneId }`
-- [ ] 1.3 Add a `isResumable(agent)` helper (claude or has `resumeCommand`) for the manager's gating
+- [x] 1.1 `buildLaunchCommand(task, deps, opts?)`: when `opts.resume`, build the resume command — claude → `${prefs.command ?? "claude"} --resume ${task.nativeSessionId}`; else agent `resumeCommand` with `{id}` → `nativeSessionId`; else throw "agent does not support resume"
+- [x] 1.2 `launchTask(task, deps, opts?: { resume?; prompt? })`: on `opts.resume`, force a `new-window` pane, launch the resume command via `sendLiteral`; if `opts.prompt` is given, ready-wait + `sendPrompt` (reuse the run tail), else skip; return `{ paneId }`
+- [x] 1.3 Add a `isResumable(agent)` helper (claude or has `resumeCommand`) for the manager's gating
 
 ## 2. Manager resume (`src/daemon/task-manager.ts` + `index.ts`)
 
@@ -22,7 +22,7 @@
 
 ## 5. Tests
 
-- [ ] 5.1 Launcher: `buildLaunchCommand({resume})` → claude `--resume <native>`; agent `resumeCommand` `{id}` substitution; non-resumable throws. `launchTask({resume})` forces new-window, launches resume cmd, sends NO prompt; `launchTask({resume, prompt})` ready-waits + sends the follow-up (inject fakes)
+- [x] 5.1 Launcher: `buildLaunchCommand({resume})` → claude `--resume <native>`; agent `resumeCommand` `{id}` substitution; non-resumable throws. `launchTask({resume})` forces new-window, launches resume cmd, sends NO prompt; `launchTask({resume, prompt})` ready-waits + sends the follow-up (inject fakes)
 - [ ] 5.2 Manager: `resume` on a stopped+resumable task → running, new pane recorded, pendingCorrelation set, emits updated; `resume(id, prompt)` threads the follow-up to launch; rejects not-stopped / no-nativeSessionId / non-resumable agent; missing id → undefined
 - [ ] 5.3 Server: `POST /tasks/{id}/resume` → 404 missing, 400 not-stopped, 200 re-attach, 200 with a follow-up prompt in the body (stub launch)
 - [ ] 5.4 CLI: `resume <ref>` resolves prefix then POSTs `/resume`; `resume <ref> --prompt <t>` includes it in the body; `list --stopped` filters
