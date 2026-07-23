@@ -12,8 +12,8 @@
 
 ## 3. Server route (`src/daemon/server.ts`)
 
-- [ ] 3.1 Add `POST /tasks/{id}/resume` route (suffixed, before the generic `/tasks/{id}`)
-- [ ] 3.2 `handleResumeTask`: read optional `{ prompt }` from the JSON body (tolerate an empty body); 404 when missing; 400 on a gating failure (not stopped / no native id / non-resumable agent / launch error); 200 `{ success: true, task }` on resume
+- [x] 3.1 Add `POST /tasks/{id}/resume` route (suffixed, before the generic `/tasks/{id}`)
+- [x] 3.2 `handleResumeTask`: read optional `{ prompt }` from the JSON body (tolerate an empty body); 404 when missing; 400 on a gating failure (not stopped / no native id / non-resumable agent / launch error); 200 `{ success: true, task }` on resume
 
 ## 4. CLI (`src/commands/task.ts`)
 
@@ -24,7 +24,7 @@
 
 - [x] 5.1 Launcher: `buildLaunchCommand({resume})` → claude `--resume <native>`; agent `resumeCommand` `{id}` substitution; non-resumable throws. `launchTask({resume})` forces new-window, launches resume cmd, sends NO prompt; `launchTask({resume, prompt})` ready-waits + sends the follow-up (inject fakes)
 - [x] 5.2 Manager: `resume` on a stopped+resumable task → running, new pane recorded, pendingCorrelation set, emits updated; `resume(id, prompt)` threads the follow-up to launch; rejects not-stopped / no-nativeSessionId / non-resumable agent; missing id → undefined
-- [ ] 5.3 Server: `POST /tasks/{id}/resume` → 404 missing, 400 not-stopped, 200 re-attach, 200 with a follow-up prompt in the body (stub launch)
+- [x] 5.3 Server: `POST /tasks/{id}/resume` → 404 missing, 400 not-stopped, 200 re-attach, 200 with a follow-up prompt in the body (stub launch)
 - [ ] 5.4 CLI: `resume <ref>` resolves prefix then POSTs `/resume`; `resume <ref> --prompt <t>` includes it in the body; `list --stopped` filters
 
 ## 6. Verification

@@ -2653,4 +2653,53 @@ describe("task HTTP endpoints", () => {
 
     expect((await internals.taskManager.get(id))?.status).toBe("running");
   });
+
+  // Drive a task to `stopped` (create → run → correlate → session removed).
+  async function stoppedTaskId(internals: ServerInternals): Promise<string> {
+    const id = await createOne(internals); // agent claude, real cwd
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    await internals.backfillTaskLink({
+      id: "sess-r",
+      tmuxPane: "%stub",
+      nativeSessionId: "nat",
+    } as Session);
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "sess-r" });
+    return id;
+  }
+
+  it("POST /tasks/{id}/resume resumes a stopped task", async () => {
+    const { internals } = createServer();
+    const id = await stoppedTaskId(internals);
+    expect((await internals.taskManager.get(id))?.status).toBe("stopped");
+
+    const res = await internals.handleRequest(jsonPost(`/tasks/${id}/resume`, {}));
+    expect(res.status).toBe(200);
+    const got = await internals.taskManager.get(id);
+    expect(got?.status).toBe("running");
+    expect(got?.nativeSessionId).toBe("nat"); // preserved
+  });
+
+  it("POST /tasks/{id}/resume with a follow-up prompt succeeds", async () => {
+    const { internals } = createServer();
+    const id = await stoppedTaskId(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/resume`, { prompt: "continue" }),
+    );
+    expect(res.status).toBe(200);
+    expect((await internals.taskManager.get(id))?.status).toBe("running");
+  });
+
+  it("POST /tasks/{id}/resume returns 404 for a missing task", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(jsonPost("/tasks/nope/resume", {}));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/resume returns 400 for a non-stopped task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // running
+    const res = await internals.handleRequest(jsonPost(`/tasks/${id}/resume`, {}));
+    expect(res.status).toBe(400);
+  });
 });

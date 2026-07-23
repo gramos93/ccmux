@@ -730,6 +730,14 @@ export class DaemonServer {
       const id = path.slice("/tasks/".length, -"/run".length);
       return await this.handleRunTask(id, corsHeaders);
     }
+    if (
+      path.startsWith("/tasks/") &&
+      path.endsWith("/resume") &&
+      req.method === "POST"
+    ) {
+      const id = path.slice("/tasks/".length, -"/resume".length);
+      return await this.handleResumeTask(id, req, corsHeaders);
+    }
     if (path.startsWith("/tasks/") && req.method === "GET") {
       const id = path.slice("/tasks/".length);
       return await this.handleGetTask(id, corsHeaders);
@@ -1026,6 +1034,37 @@ export class DaemonServer {
     } catch (err) {
       // Launcher errors (unsupported target, missing targetRef, tmux failure)
       // are caller mistakes or environment faults → 400.
+      return Response.json(
+        { success: false, message: (err as Error).message },
+        { status: 400, headers },
+      );
+    }
+  }
+
+  private async handleResumeTask(
+    id: string,
+    req: Request,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    // Optional follow-up prompt; tolerate an empty/absent body.
+    let prompt: string | undefined;
+    try {
+      const body = (await req.json()) as { prompt?: unknown };
+      if (typeof body?.prompt === "string") prompt = body.prompt;
+    } catch {
+      // No body → re-attach only.
+    }
+    try {
+      const task = await this.taskManager.resume(id, prompt);
+      if (!task) {
+        return Response.json(
+          { success: false, message: "Task not found" },
+          { status: 404, headers },
+        );
+      }
+      return Response.json({ success: true, task }, { headers });
+    } catch (err) {
+      // Not stopped / no nativeSessionId / non-resumable agent / tmux failure.
       return Response.json(
         { success: false, message: (err as Error).message },
         { status: 400, headers },
