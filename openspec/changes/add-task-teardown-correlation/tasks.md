@@ -6,9 +6,9 @@
 
 ## 2. Correlation captures nativeSessionId (`src/daemon/task-manager.ts`)
 
-- [ ] 2.1 Change `correlateSession` to accept the session's `nativeSessionId` alongside `paneId`/`sessionId` (e.g. `correlateSession(paneId, sessionId, nativeSessionId?)`)
-- [ ] 2.2 On first bind (pane in `pendingCorrelation`): set `sessionId` (+ `nativeSessionId` if present), record `linkedBySession` (sessionId → taskId), drain the pending entry, emit `updated`
-- [ ] 2.3 On a subsequent event for an already-linked session: refresh `nativeSessionId` when it changed; emit `updated` only on change (no spam)
+- [x] 2.1 Change `correlateSession` to accept the session's `nativeSessionId` alongside `paneId`/`sessionId` (e.g. `correlateSession(paneId, sessionId, nativeSessionId?)`)
+- [x] 2.2 On first bind (pane in `pendingCorrelation`): set `sessionId` (+ `nativeSessionId` if present), record `linkedBySession` (sessionId → taskId), drain the pending entry, emit `updated`
+- [x] 2.3 On a subsequent event for an already-linked session: refresh `nativeSessionId` when it changed; emit `updated` only on change (no spam)
 
 ## 3. Teardown on session removal (`src/daemon/task-manager.ts` + `server.ts`)
 

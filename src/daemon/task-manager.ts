@@ -64,6 +64,12 @@ export class TaskManager extends EventEmitter {
    * a store scan.
    */
   private pendingCorrelation = new Map<string, string>();
+  /**
+   * sessionId → taskId for already-correlated tasks. Lets subsequent updates
+   * refresh `nativeSessionId` and lets `onSessionRemoved` find the task on
+   * teardown — both without a store scan.
+   */
+  private linkedBySession = new Map<string, string>();
 
   constructor(deps: { launch?: TaskLaunchFn; invoke?: TaskInvokeFn } = {}) {
     super();
@@ -205,20 +211,45 @@ export class TaskManager extends EventEmitter {
 
   /**
    * Link a session to a launched task when the session binds the pane the task
-   * was launched into. Drains the pending entry on first match. No-op when the
-   * pane matches no launched task. Called off the session-event path (see
-   * `backfillTaskLink`), so the common case is a single `Map.get`.
+   * was launched into, and keep the task's `nativeSessionId` in sync.
+   *
+   * - First bind (pane in `pendingCorrelation`): write `sessionId` (+ the
+   *   agent's `nativeSessionId` when already present), record the
+   *   `sessionId → taskId` link, drain the pending entry, emit `updated`.
+   * - Already linked: refresh `nativeSessionId` when it has changed (it arrives
+   *   late for claude — after the first turn), emitting only on a real change.
+   *
+   * Called off the session-event path (see `backfillTaskLink`), so the common
+   * (no-match) case is a single `Map.get`.
    */
   async correlateSession(
     paneId: string | null,
     sessionId: string,
+    nativeSessionId?: string | null,
   ): Promise<void> {
-    if (!paneId) return;
-    const taskId = this.pendingCorrelation.get(paneId);
-    if (!taskId) return;
-    this.pendingCorrelation.delete(paneId);
-    const updated = await patchTask(taskId, { sessionId });
-    if (updated) this.safeEmit({ kind: "updated", task: updated });
+    if (paneId) {
+      const pendingTaskId = this.pendingCorrelation.get(paneId);
+      if (pendingTaskId) {
+        this.pendingCorrelation.delete(paneId);
+        this.linkedBySession.set(sessionId, pendingTaskId);
+        const updated = await patchTask(pendingTaskId, {
+          sessionId,
+          ...(nativeSessionId ? { nativeSessionId } : {}),
+        });
+        if (updated) this.safeEmit({ kind: "updated", task: updated });
+        return;
+      }
+    }
+
+    // Already-linked session: refresh nativeSessionId only when it changed.
+    const linkedTaskId = this.linkedBySession.get(sessionId);
+    if (linkedTaskId && nativeSessionId) {
+      const task = await getTask(linkedTaskId);
+      if (task && task.nativeSessionId !== nativeSessionId) {
+        const updated = await patchTask(linkedTaskId, { nativeSessionId });
+        if (updated) this.safeEmit({ kind: "updated", task: updated });
+      }
+    }
   }
 
   /**
