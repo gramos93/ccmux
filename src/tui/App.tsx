@@ -51,6 +51,13 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
 import { TaskList } from "./components/TaskList";
+import { TaskCreateModal } from "./components/TaskCreateModal";
+import {
+  buildCreateBody,
+  buildCreateOptions,
+  buildInitialForm,
+  resolveTaskActivation,
+} from "./utils/task-create";
 import { SearchInput } from "./components/SearchInput";
 import { Preview } from "./components/Preview";
 import { Toast } from "./components/Toast";
@@ -531,6 +538,15 @@ export function App(props: AppProps) {
     fetch(`${getDaemonUrl()}${killActionPath(session)}`, { method: "POST" });
   }
 
+  /** POST JSON to the daemon (fire-and-forget helper for task actions). */
+  function postJson(path: string, body?: unknown): Promise<Response> {
+    return fetch(`${getDaemonUrl()}${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+  }
+
   /** Resume the selected stopped task (re-attach). Fire-and-forget; the
    *  task_updated broadcast flips the row to running. No-op unless stopped. */
   function resumeSelectedTask() {
@@ -538,11 +554,25 @@ export function App(props: AppProps) {
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task || task.status !== "stopped") return;
-    fetch(`${getDaemonUrl()}/tasks/${task.id}/resume`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({}),
-    }).catch(() => {});
+    postJson(`/tasks/${task.id}/resume`, {}).catch(() => {});
+  }
+
+  /** Run a pending task by id. Fire-and-forget; the task_updated broadcast
+   *  flips the row to running. */
+  function runTaskById(id: string) {
+    postJson(`/tasks/${id}/run`).catch(() => {});
+  }
+
+  /** The task-view `r` action: run a `pending` task, resume a `stopped` one,
+   *  no-op otherwise. Shares the activation decision but ignores `jump`. */
+  function runOrResumeSelectedTask() {
+    const task = store.state.tasks.find(
+      (t) => t.id === store.state.selectedTaskId,
+    );
+    if (!task) return;
+    const action = resolveTaskActivation(task);
+    if (action.kind === "run") runTaskById(action.id);
+    else if (action.kind === "resume") resumeSelectedTask();
   }
 
   /** Delete the selected task. The task_removed broadcast drops the row. */
@@ -552,23 +582,71 @@ export function App(props: AppProps) {
     fetch(`${getDaemonUrl()}/tasks/${id}`, { method: "DELETE" }).catch(() => {});
   }
 
-  /** Enter on a task row: resume a stopped task, or jump to the live session
-   *  of a running/correlated one (mirrors `activateItem` for sessions). */
+  /** Enter on a task row: run a pending task, resume a stopped task, or jump
+   *  to the live session of a running/correlated one (mirrors `activateItem`
+   *  for sessions — one activate rule across every status). */
   function activateSelectedTask() {
     const task = store.state.tasks.find(
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task) return;
-    if (task.status === "stopped") {
+    const action = resolveTaskActivation(task);
+    if (action.kind === "run") {
+      runTaskById(action.id);
+    } else if (action.kind === "resume") {
       resumeSelectedTask();
-      return;
-    }
-    if (task.sessionId) {
-      const session = getSessionById(task.sessionId);
+    } else if (action.kind === "jump") {
+      const session = getSessionById(action.sessionId);
       if (session?.tmuxPane) {
         store.actions.setActiveSessionId(session.id);
         selectPane(session.tmuxPane);
       }
+    }
+  }
+
+  /** Open the create modal, sourcing choices from local config + live
+   *  sessions and pre-filling from the default cascade for the contextual
+   *  project (the selected session's cwd, else the first known cwd). */
+  function openCreateModal() {
+    const liveSessions = store.state.sessions.filter((s) => s.tmuxPane);
+    const defaultProject =
+      store.selectedSession()?.cwd ??
+      liveSessions[0]?.cwd ??
+      store.state.sessions[0]?.cwd ??
+      "";
+    const options = buildCreateOptions(liveSessions, defaultProject);
+    const form = buildInitialForm(options, defaultProject);
+    store.actions.openCreateModal(form, options);
+  }
+
+  /** Submit the create form: POST /tasks (unset fields omitted so the daemon
+   *  cascade still applies), then run it when run-now is set. The modal closes
+   *  on a successful create; the row arrives via the task_created broadcast. */
+  async function submitCreate() {
+    if (!store.createFormValid()) {
+      store.actions.showToast("Prompt required (or pick a template)");
+      return;
+    }
+    const body = buildCreateBody(store.state.createForm);
+    const runNow = store.state.createForm.runNow;
+    try {
+      const res = await postJson("/tasks", body);
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as {
+          message?: string;
+        };
+        store.actions.showToast(
+          `Create failed: ${data.message ?? res.status}`,
+        );
+        return;
+      }
+      store.actions.closeCreateModal();
+      if (runNow) {
+        const { task } = (await res.json()) as { task: { id: string } };
+        runTaskById(task.id);
+      }
+    } catch {
+      store.actions.showToast("Create failed");
     }
   }
 
@@ -854,8 +932,68 @@ export function App(props: AppProps) {
   let pendingG = false;
   let pendingZ = false;
 
+  /** Modal key handler: owns all keys while the create form is open (like
+   *  searchMode/confirmMode). Nav/cycle/submit/cancel are intercepted; when
+   *  the prompt field is focused, unhandled keys fall through to its <input>. */
+  function handleCreateModalKey(event: KeyEvent) {
+    const key = event.name;
+    if (key === "escape") {
+      store.actions.closeCreateModal();
+      event.preventDefault();
+      return;
+    }
+    if (key === "return" || key === "enter") {
+      void submitCreate();
+      event.preventDefault();
+      return;
+    }
+    if (key === "tab") {
+      store.actions.moveCreateFocus(event.shift ? -1 : 1);
+      event.preventDefault();
+      return;
+    }
+    if (key === "up") {
+      store.actions.moveCreateFocus(-1);
+      event.preventDefault();
+      return;
+    }
+    if (key === "down") {
+      store.actions.moveCreateFocus(1);
+      event.preventDefault();
+      return;
+    }
+    const field = store.focusedCreateField();
+    // The prompt field is a text input: let it receive typed chars (including
+    // h/l and left/right for cursor movement) — only the nav/submit/cancel
+    // keys above are intercepted for it.
+    if (field === "prompt") return;
+    if (key === "left" || key === "h") {
+      store.actions.cycleCreateField(field, -1);
+      event.preventDefault();
+      return;
+    }
+    if (key === "right" || key === "l") {
+      store.actions.cycleCreateField(field, 1);
+      event.preventDefault();
+      return;
+    }
+    if (key === "space" || key === " ") {
+      store.actions.cycleCreateField(field, 1);
+      event.preventDefault();
+      return;
+    }
+    // Non-text field: swallow every other key so it can't leak to the board.
+    event.preventDefault();
+  }
+
   useKeyboard((event: KeyEvent) => {
     const key = event.name;
+
+    // Create modal owns the keyboard while open (before any board/session key).
+    if (store.state.createModalOpen) {
+      handleCreateModalKey(event);
+      return;
+    }
 
     if (store.state.showHelp) {
       if (key === "?" || key === "q" || key === "escape") {
@@ -959,6 +1097,13 @@ export function App(props: AppProps) {
       return;
     }
 
+    // `c` opens the create-task modal from either view.
+    if (key === "c") {
+      openCreateModal();
+      event.preventDefault();
+      return;
+    }
+
     // Task board: its own key set, isolated from session nav.
     if (store.state.view === "tasks") {
       if (key === "escape") {
@@ -972,7 +1117,7 @@ export function App(props: AppProps) {
       } else if (key === "return" || key === "enter") {
         activateSelectedTask();
       } else if (key === "r") {
-        resumeSelectedTask();
+        runOrResumeSelectedTask();
       } else if (key === "x") {
         deleteSelectedTask();
       } else if (key === "b") {
@@ -1430,6 +1575,17 @@ export function App(props: AppProps) {
               onClose={store.actions.hideGroupContextMenu}
             />
           )}
+        </Show>
+
+        <Show when={store.state.createModalOpen}>
+          <TaskCreateModal
+            form={store.state.createForm}
+            options={store.state.createOptions}
+            visibleFields={store.visibleCreateFields()}
+            focusedField={store.focusedCreateField()}
+            valid={store.createFormValid()}
+            onPromptInput={(v) => store.actions.setCreateField("prompt", v)}
+          />
         </Show>
 
         {/* Transient feedback, rendered in every mode: the one-shot and persistent

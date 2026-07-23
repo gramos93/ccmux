@@ -2654,4 +2654,96 @@ describe("store", () => {
       expect(store.state.selectedTaskId).toBe("b");
     });
   });
+
+  describe("create-task modal slice", () => {
+    const form = {
+      agent: "claude",
+      project: "/a",
+      target: "new-window" as const,
+      targetRef: "",
+      template: "",
+      prompt: "",
+      background: false,
+      runNow: true,
+    };
+    const options = {
+      agents: ["claude", "codex"],
+      templates: ["review", "fix"],
+      projects: ["/a", "/b"],
+      sessions: [
+        { pane: "%1", label: "%1 claude a" },
+        { pane: "%2", label: "%2 codex b" },
+      ],
+      templateHasPrompt: { review: true, fix: false },
+    };
+
+    it("openCreateModal seeds the form/options and focuses the first field", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form, agent: "codex" }, options);
+      expect(store.state.createModalOpen).toBe(true);
+      expect(store.state.createForm.agent).toBe("codex");
+      expect(store.state.createFocusIndex).toBe(0);
+      expect(store.focusedCreateField()).toBe("agent");
+    });
+
+    it("closeCreateModal resets the form and closes", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form, prompt: "x" }, options);
+      store.actions.closeCreateModal();
+      expect(store.state.createModalOpen).toBe(false);
+      expect(store.state.createForm.prompt).toBe("");
+    });
+
+    it("cycleCreateField wraps through the option list and toggles booleans", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      // agent: claude → codex → wrap → claude
+      store.actions.cycleCreateField("agent", 1);
+      expect(store.state.createForm.agent).toBe("codex");
+      store.actions.cycleCreateField("agent", 1);
+      expect(store.state.createForm.agent).toBe("claude");
+      // template: "" → review (index 0 is the (none) entry)
+      store.actions.cycleCreateField("template", 1);
+      expect(store.state.createForm.template).toBe("review");
+      // background toggles regardless of direction
+      store.actions.cycleCreateField("background", 1);
+      expect(store.state.createForm.background).toBe(true);
+      // prompt is not cyclable
+      store.actions.cycleCreateField("prompt", 1);
+      expect(store.state.createForm.prompt).toBe("");
+    });
+
+    it("createFormValid gates on a prompt or a prompt-bearing template", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      expect(store.createFormValid()).toBe(false);
+      store.actions.setCreateField("prompt", "do it");
+      expect(store.createFormValid()).toBe(true);
+      // Empty prompt but a template that supplies one → valid.
+      store.actions.setCreateField("prompt", "");
+      store.actions.setCreateField("template", "review");
+      expect(store.createFormValid()).toBe(true);
+      // Template without a prompt → not valid.
+      store.actions.setCreateField("template", "fix");
+      expect(store.createFormValid()).toBe(false);
+    });
+
+    it("target-ref enters the focus set only for split/send-to-existing", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      expect(store.visibleCreateFields()).not.toContain("targetRef");
+      store.actions.setCreateField("target", "split");
+      expect(store.visibleCreateFields()).toContain("targetRef");
+    });
+
+    it("moveCreateFocus clamps within the visible fields", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      store.actions.moveCreateFocus(-1); // clamp low
+      expect(store.state.createFocusIndex).toBe(0);
+      store.actions.moveCreateFocus(99); // clamp high
+      const n = store.visibleCreateFields().length;
+      expect(store.state.createFocusIndex).toBe(n - 1);
+    });
+  });
 });

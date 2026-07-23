@@ -28,6 +28,13 @@ import {
   type TaskFlatItem,
   type TaskGroupBy,
 } from "./utils/task-grouping";
+import {
+  cycleOptionsFor,
+  visibleCreateFieldsFor,
+  type CreateField,
+  type CreateFormState,
+  type CreateOptions,
+} from "./utils/task-create";
 import type { IconStyle } from "../lib/icons";
 import type {
   ColumnsConfig,
@@ -95,7 +102,33 @@ interface TUIState {
   tasks: TaskInstance[];
   selectedTaskId: string | null;
   taskGroupBy: TaskGroupBy;
+  /** Create-task modal state (add-tui-task-create). */
+  createModalOpen: boolean;
+  createForm: CreateFormState;
+  createOptions: CreateOptions;
+  /** Index into the modal's visible fields of the currently-focused field. */
+  createFocusIndex: number;
 }
+
+/** Empty form/options used as the store's initial (closed-modal) value. */
+const EMPTY_CREATE_FORM: CreateFormState = {
+  agent: "",
+  project: "",
+  target: "new-window",
+  targetRef: "",
+  template: "",
+  prompt: "",
+  background: false,
+  runNow: true,
+};
+
+const EMPTY_CREATE_OPTIONS: CreateOptions = {
+  agents: [],
+  templates: [],
+  projects: [],
+  sessions: [],
+  templateHasPrompt: {},
+};
 
 interface TUIStoreOptions {
   initialPreview?: boolean;
@@ -369,6 +402,10 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     tasks: [],
     selectedTaskId: null,
     taskGroupBy: "status",
+    createModalOpen: false,
+    createForm: { ...EMPTY_CREATE_FORM },
+    createOptions: { ...EMPTY_CREATE_OPTIONS },
+    createFocusIndex: 0,
   });
 
   // Effect: capture pane content for search (debounced)
@@ -649,6 +686,22 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     taskFlatIndex(taskFlatItems(), state.selectedTaskId),
   );
 
+  // Create-modal: the visible (focusable) fields for the current form, the
+  // currently-focused one (clamped), and whether the form can be submitted.
+  const visibleCreateFields = createMemo((): CreateField[] =>
+    visibleCreateFieldsFor(state.createForm),
+  );
+  const focusedCreateField = createMemo((): CreateField => {
+    const fields = visibleCreateFields();
+    const idx = Math.max(0, Math.min(state.createFocusIndex, fields.length - 1));
+    return fields[idx];
+  });
+  const createFormValid = createMemo((): boolean => {
+    const f = state.createForm;
+    if (f.prompt.trim().length > 0) return true;
+    return Boolean(f.template && state.createOptions.templateHasPrompt[f.template]);
+  });
+
   const selectedIndex = trackedMemo("selectedIndex", () => {
     const items = flatItems();
 
@@ -911,6 +964,67 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       const i = TASK_GROUP_BY_ORDER.indexOf(state.taskGroupBy);
       const next = TASK_GROUP_BY_ORDER[(i + 1) % TASK_GROUP_BY_ORDER.length];
       setState("taskGroupBy", next);
+    },
+
+    // --- Create-task modal (add-tui-task-create) -----------------------------
+
+    /** Open the create modal seeded with a pre-filled form and the choice
+     *  lists it cycles through. Focus starts on the first field. */
+    openCreateModal(form: CreateFormState, options: CreateOptions) {
+      batch(() => {
+        setState("createForm", form);
+        setState("createOptions", options);
+        setState("createFocusIndex", 0);
+        setState("createModalOpen", true);
+      });
+    },
+
+    /** Close the modal and reset its form to empty. */
+    closeCreateModal() {
+      batch(() => {
+        setState("createModalOpen", false);
+        setState("createForm", { ...EMPTY_CREATE_FORM });
+        setState("createOptions", { ...EMPTY_CREATE_OPTIONS });
+        setState("createFocusIndex", 0);
+      });
+    },
+
+    /** Set a single form field (text entry for prompt; direct writes). */
+    setCreateField<K extends keyof CreateFormState>(
+      key: K,
+      value: CreateFormState[K],
+    ) {
+      setState("createForm", key, value);
+    },
+
+    /** Move focus between the visible fields, clamped to the ends. */
+    moveCreateFocus(delta: number) {
+      const fields = visibleCreateFields();
+      const next = Math.max(
+        0,
+        Math.min(fields.length - 1, state.createFocusIndex + delta),
+      );
+      setState("createFocusIndex", next);
+    },
+
+    /** Cycle a field's value by `dir` (±1). Toggles the boolean fields; wraps
+     *  through the option list for the cyclable ones; no-op for `prompt`. */
+    cycleCreateField(field: CreateField, dir: number) {
+      if (field === "background") {
+        setState("createForm", "background", !state.createForm.background);
+        return;
+      }
+      if (field === "runNow") {
+        setState("createForm", "runNow", !state.createForm.runNow);
+        return;
+      }
+      if (field === "prompt") return;
+      const list = cycleOptionsFor(field, state.createOptions);
+      if (list.length === 0) return;
+      const current = String(state.createForm[field] ?? "");
+      const cur = list.indexOf(current);
+      const nextIdx = ((cur === -1 ? 0 : cur) + dir + list.length) % list.length;
+      setState("createForm", field, list[nextIdx]);
     },
 
     /** An invoke worker began executing (invocation_started SSE event). */
@@ -1383,6 +1497,9 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     pinnedGroups,
     taskFlatItems,
     selectedTaskFlatIndex,
+    visibleCreateFields,
+    focusedCreateField,
+    createFormValid,
     actions,
     tick,
     bumpTick: () => setTick((t) => t + 1),
