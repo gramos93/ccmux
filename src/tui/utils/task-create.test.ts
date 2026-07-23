@@ -1,10 +1,14 @@
 import { describe, it, expect } from "bun:test";
+import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
 import {
   buildCreateBody,
   buildCreateOptions,
   cycleOptionsFor,
   projectPickerChoices,
   resolveTaskActivation,
+  scanProjectRoots,
   sessionMatchesProject,
   sessionsForProject,
   visibleCreateFieldsFor,
@@ -56,6 +60,30 @@ describe("buildCreateOptions", () => {
     // Sessions carry cwd/project for filtering.
     expect(opts.sessions).toHaveLength(3);
     expect(opts.sessions[0].cwd).toBe("/Users/test/app");
+  });
+});
+
+describe("scanProjectRoots", () => {
+  it("lists immediate subdirs, skipping files and hidden dirs", () => {
+    const root = mkdtempSync(join(tmpdir(), "ccmux-root-"));
+    mkdirSync(join(root, "app"));
+    mkdirSync(join(root, "api"));
+    mkdirSync(join(root, ".hidden"));
+    writeFileSync(join(root, "README.md"), "x");
+    const found = scanProjectRoots(root);
+    expect(found.sort()).toEqual([join(root, "api"), join(root, "app")]);
+  });
+
+  it("returns [] for undefined or a missing root, and merges multiple roots", () => {
+    expect(scanProjectRoots(undefined)).toEqual([]);
+    expect(scanProjectRoots("/no/such/dir/ccmux-x")).toEqual([]);
+    const a = mkdtempSync(join(tmpdir(), "ccmux-a-"));
+    const b = mkdtempSync(join(tmpdir(), "ccmux-b-"));
+    mkdirSync(join(a, "one"));
+    mkdirSync(join(b, "two"));
+    const found = scanProjectRoots([a, b, "/missing/ccmux-y"]);
+    expect(found).toContain(join(a, "one"));
+    expect(found).toContain(join(b, "two"));
   });
 });
 

@@ -1,4 +1,6 @@
-import { basename } from "path";
+import { readdirSync } from "fs";
+import { homedir } from "os";
+import { basename, join } from "path";
 import type { EnrichedSession } from "../../types";
 import type { TaskInstance, TaskTarget } from "../../lib/task";
 import { DEFAULT_TASK_TARGET, resolveTask } from "../../lib/task";
@@ -74,6 +76,37 @@ function uniq(values: string[]): string[] {
   return [...new Set(values.filter((v) => v.length > 0))];
 }
 
+/** Expand a leading `~` to the home directory. */
+function expandTilde(p: string): string {
+  return p === "~" || p.startsWith("~/") ? join(homedir(), p.slice(1)) : p;
+}
+
+/**
+ * List the immediate subdirectories of each project root (one level, `~`
+ * expanded), skipping hidden dirs. A missing/unreadable root is skipped. Pure
+ * given its argument (exported for testing).
+ */
+export function scanProjectRoots(
+  roots: string | string[] | undefined,
+): string[] {
+  if (!roots) return [];
+  const list = Array.isArray(roots) ? roots : [roots];
+  const out: string[] = [];
+  for (const raw of list) {
+    const root = expandTilde(raw);
+    try {
+      for (const entry of readdirSync(root, { withFileTypes: true })) {
+        if (entry.isDirectory() && !entry.name.startsWith(".")) {
+          out.push(join(root, entry.name));
+        }
+      }
+    } catch {
+      // Root doesn't exist or isn't readable — skip it.
+    }
+  }
+  return out;
+}
+
 /**
  * Build the create form's choice lists from local preferences, the built-in
  * agent registry, the current live sessions, and the projects that already
@@ -93,14 +126,16 @@ export function buildCreateOptions(
     templateHasPrompt[name] = Boolean(tpl.prompt && tpl.prompt.length > 0);
   }
 
-  // Project candidates: the contextual default first, then config projects,
-  // then the projects of existing tasks, then the distinct cwds of live
-  // sessions. De-duped, first-seen order.
+  // Project candidates, de-duped in first-seen (relevance) order: the
+  // contextual default and other "recently active" hints first (config
+  // projects, existing-task projects, live-session cwds), then the bulk of
+  // folders scanned from the configured project root(s).
   const projects = uniq([
     defaultProject,
     ...Object.keys(prefs.projects ?? {}),
     ...taskProjects,
     ...liveSessions.map((s) => s.cwd),
+    ...scanProjectRoots(prefs.projectsRoot),
   ]);
 
   const sessions: CreateSessionOption[] = liveSessions

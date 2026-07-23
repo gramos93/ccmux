@@ -356,6 +356,14 @@ export interface Preferences {
    */
   projects?: Record<string, ProjectConfig>;
   /**
+   * Root directory (or directories) under which most projects live, e.g.
+   * `"~/Projects"`. The TUI create form lists the immediate subdirectories of
+   * each root as project choices in its searchable picker (a one-level scan,
+   * `~` expanded). Optional; absence just means the picker is sourced only from
+   * config `projects`, live-session cwds, and existing-task projects.
+   */
+  projectsRoot?: string | string[];
+  /**
    * Global task defaults — the lowest-priority layer of the default cascade
    * (e.g. `worktree`, `agent`, `target`). Optional; POC-friendly (no
    * per-project or template config is required to create a task).
