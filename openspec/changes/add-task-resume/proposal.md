@@ -4,13 +4,14 @@ Phase 1 banked the durable resume key (`nativeSessionId`) and made closed intera
 
 ## What Changes
 
-- Add `POST /tasks/{id}/resume` and `TaskManager.resume(id)`: for a `stopped` task with a `nativeSessionId` whose agent supports resume, launch the agent's **resume command** into a fresh `new-window` pane (no new prompt — it re-attaches the existing conversation), re-correlate the resulting session, and set status back to `running`. `nativeSessionId` is preserved; a new `paneId`/`sessionId` bind on correlation.
+- Add `POST /tasks/{id}/resume` and `TaskManager.resume(id, prompt?)`: for a `stopped` task with a `nativeSessionId` whose agent supports resume, launch the agent's **resume command** into a fresh `new-window` pane (re-attaching the existing conversation), re-correlate the resulting session, and set status back to `running`. `nativeSessionId` is preserved; a new `paneId`/`sessionId` bind on correlation.
+- **Optional follow-up prompt on resume.** If a prompt is supplied, after the resumed agent signals ready it is submitted (reusing `run`'s ready-then-send + `sendPromptToPane`) — i.e. "resume and continue with X". With no prompt, resume just re-attaches and the user drives.
 - **Resume command per agent** (mirrors `buildClaudeLaunchCommand`): claude → `<binary> --resume <nativeSessionId>`; any agent with a `resumeCommand` → that template with `{id}` → `nativeSessionId`. Agents that are neither (no `resumeCommand`, not claude) are **not resumable** → the resume fails with a clear error.
 - **Gating:** resume requires the task to be `stopped`, to have a `nativeSessionId`, and the agent to be resumable; otherwise `400`. A missing task → `404`.
-- **Launcher gains a resume mode:** `launchTask(task, deps, { resume: true })` builds the resume command and skips the prompt-submit step (the conversation is already there). Pane creation, cwd validation, and correlation are reused unchanged.
-- **CLI:** `ccmux task resume <ref>` (id or unique prefix), and `ccmux task list --stopped` to surface the resumable set.
+- **Launcher gains a resume mode:** `launchTask(task, deps, { resume: true, prompt? })` builds the resume command; when a follow-up `prompt` is given it ready-waits and submits it, otherwise it skips prompt delivery. Pane creation, cwd validation, and correlation are reused unchanged.
+- **CLI:** `ccmux task resume <ref> [--prompt <text>]` (id or unique prefix; optional follow-up), and `ccmux task list --stopped` to surface the resumable set.
 
-Non-goals: sending a follow-up prompt on resume (re-attach only for now), a `new-session`/new-tmux-window-vs-split choice for the resumed pane (always `new-window`), and the TUI task board (phase 3).
+Non-goals: a `new-session`/new-tmux-window-vs-split choice for the resumed pane (always `new-window`), and the TUI task board (phase 3).
 
 ## Capabilities
 
