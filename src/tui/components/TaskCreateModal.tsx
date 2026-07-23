@@ -5,6 +5,7 @@ import type {
   CreateField,
   CreateFormState,
   CreateOptions,
+  ProjectChoice,
 } from "../utils/task-create";
 
 interface TaskCreateModalProps {
@@ -14,9 +15,16 @@ interface TaskCreateModalProps {
   visibleFields: CreateField[];
   /** The currently-focused field (highlighted; the prompt one is editable). */
   focusedField: CreateField;
-  /** Whether the form can be submitted (prompt or a prompt-bearing template). */
+  /** Whether the form can be submitted (prompt/template + a resolved pane). */
   valid: boolean;
   onPromptInput: (value: string) => void;
+  // Searchable project picker (sub-overlay).
+  projectPickerOpen: boolean;
+  projectQuery: string;
+  projectChoices: ProjectChoice[];
+  projectPickerIndex: number;
+  onProjectQueryInput: (value: string) => void;
+  onProjectPickerSubmit: () => void;
 }
 
 const FIELD_LABEL: Record<CreateField, string> = {
@@ -26,7 +34,6 @@ const FIELD_LABEL: Record<CreateField, string> = {
   targetRef: "Pane",
   template: "Template",
   prompt: "Prompt",
-  background: "Background",
   runNow: "Run now",
 };
 
@@ -37,7 +44,7 @@ function displayValue(field: CreateField, props: TaskCreateModalProps): string {
     case "agent":
       return `‹ ${f.agent || "—"} ›`;
     case "project":
-      return `‹ ${f.project || "—"} ›`;
+      return `‹ ${f.project || "—"} › (space: search)`;
     case "target":
       return `‹ ${f.target} ›`;
     case "targetRef": {
@@ -46,8 +53,6 @@ function displayValue(field: CreateField, props: TaskCreateModalProps): string {
     }
     case "template":
       return `‹ ${f.template || "(none)"} ›`;
-    case "background":
-      return f.background ? "[x]" : "[ ]";
     case "runNow":
       return f.runNow ? "[x]" : "[ ]";
     default:
@@ -61,10 +66,10 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
       position="absolute"
       top="50%"
       left="50%"
-      width={62}
-      height={16}
-      marginTop={-8}
-      marginLeft={-31}
+      width={66}
+      height={15}
+      marginTop={-7}
+      marginLeft={-33}
       backgroundColor={theme.base}
       borderStyle="single"
       borderColor={theme.border}
@@ -82,10 +87,7 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
           const focused = () => props.focusedField === field;
           return (
             <box flexDirection="row" gap={1}>
-              <text
-                fg={focused() ? theme.blue : theme.overlay}
-                width={12}
-              >
+              <text fg={focused() ? theme.blue : theme.overlay} width={12}>
                 {focused() ? "▎" : " "}
                 {FIELD_LABEL[field]}
               </text>
@@ -100,14 +102,14 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
                 <input
                   value={props.form.prompt}
                   onInput={props.onPromptInput}
-                  focused={focused()}
+                  focused={focused() && !props.projectPickerOpen}
                   placeholder="what should the agent do?"
                   placeholderColor={theme.overlay}
                   textColor={theme.text}
                   cursorColor={theme.blue}
                   backgroundColor="transparent"
                   focusedBackgroundColor="transparent"
-                  width={44}
+                  width={46}
                 />
               </Show>
             </box>
@@ -118,9 +120,69 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
       <box height={1} />
       <text fg={theme.overlay}>
         {props.valid
-          ? "enter create · ←/→ change · space toggle · esc cancel"
-          : "prompt required · ←/→ change · esc cancel"}
+          ? "enter create · ←/→ change · space toggle/search · esc cancel"
+          : "needs prompt/template" +
+            (props.form.target === "split" ||
+            props.form.target === "send-to-existing"
+              ? " + a pane · ←/→ change · esc cancel"
+              : " · ←/→ change · esc cancel")}
       </text>
+
+      <Show when={props.projectPickerOpen}>
+        <box
+          position="absolute"
+          top={2}
+          left={2}
+          width={60}
+          height={11}
+          backgroundColor={theme.surface}
+          borderStyle="single"
+          borderColor={theme.blue}
+          flexDirection="column"
+          paddingLeft={1}
+          paddingRight={1}
+        >
+          <box flexDirection="row">
+            <text fg={theme.overlay} width={2}>
+              /{" "}
+            </text>
+            <input
+              value={props.projectQuery}
+              onInput={props.onProjectQueryInput}
+              onSubmit={props.onProjectPickerSubmit}
+              focused
+              placeholder="search projects (or type a path)..."
+              placeholderColor={theme.overlay}
+              textColor={theme.text}
+              cursorColor={theme.blue}
+              backgroundColor="transparent"
+              focusedBackgroundColor="transparent"
+              width="100%"
+            />
+          </box>
+          <box height={1} />
+          <Show
+            when={props.projectChoices.length > 0}
+            fallback={<text fg={theme.overlay}>no matching projects</text>}
+          >
+            <select
+              options={props.projectChoices.map((c) => ({
+                name: c.name,
+                description: "",
+                value: c.value,
+              }))}
+              selectedIndex={props.projectPickerIndex}
+              showDescription={false}
+              showScrollIndicator
+              selectedBackgroundColor={theme.blue}
+              selectedTextColor={theme.base}
+              backgroundColor="transparent"
+              textColor={theme.text}
+              flexGrow={1}
+            />
+          </Show>
+        </box>
+      </Show>
     </box>
   );
 };

@@ -3,7 +3,10 @@ import {
   buildCreateBody,
   buildCreateOptions,
   cycleOptionsFor,
+  projectPickerChoices,
   resolveTaskActivation,
+  sessionMatchesProject,
+  sessionsForProject,
   visibleCreateFieldsFor,
   type CreateFormState,
   type CreateOptions,
@@ -18,7 +21,6 @@ function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
     targetRef: "",
     template: "",
     prompt: "",
-    background: false,
     runNow: true,
     ...overrides,
   };
@@ -29,29 +31,31 @@ const OPTIONS: CreateOptions = {
   templates: ["review", "fix"],
   projects: ["/a", "/b"],
   sessions: [
-    { pane: "%1", label: "%1 claude app" },
-    { pane: "%2", label: "%2 codex api" },
+    { pane: "%1", label: "%1 claude app", cwd: "/Users/test/app", project: "app" },
+    { pane: "%2", label: "%2 codex api", cwd: "/Users/test/api", project: "api" },
   ],
   templateHasPrompt: { review: true, fix: false },
 };
 
 describe("buildCreateOptions", () => {
-  it("merges built-in agents, config, and live-session cwds (de-duped)", () => {
+  it("merges built-in agents, config, task projects, and live cwds (de-duped)", () => {
     const sessions = [
       mockEnrichedSession({ id: "s1", cwd: "/Users/test/app", tmuxPane: "%1" }),
       mockEnrichedSession({ id: "s2", cwd: "/Users/test/app", tmuxPane: "%2" }),
       mockEnrichedSession({ id: "s3", cwd: "/Users/test/api", tmuxPane: "%3" }),
     ];
-    const opts = buildCreateOptions(sessions, "/Users/test/app");
-    // Built-in registry always includes claude.
+    const opts = buildCreateOptions(sessions, "/Users/test/app", [
+      "/Users/test/legacy",
+    ]);
     expect(opts.agents).toContain("claude");
-    // Default project first, api present once, app not duplicated.
+    // Default project first, task project present, app not duplicated.
     expect(opts.projects[0]).toBe("/Users/test/app");
     expect(opts.projects.filter((p) => p === "/Users/test/app")).toHaveLength(1);
+    expect(opts.projects).toContain("/Users/test/legacy");
     expect(opts.projects).toContain("/Users/test/api");
-    // Only paned sessions become target-ref choices, labelled by basename.
+    // Sessions carry cwd/project for filtering.
     expect(opts.sessions).toHaveLength(3);
-    expect(opts.sessions[0].label).toContain("app");
+    expect(opts.sessions[0].cwd).toBe("/Users/test/app");
   });
 });
 
@@ -68,9 +72,10 @@ describe("buildCreateBody", () => {
     expect("template" in body).toBe(false);
   });
 
-  it("collapses the background toggle into target=background", () => {
-    const body = buildCreateBody(form({ background: true, prompt: "x" }));
+  it("passes a background target straight through", () => {
+    const body = buildCreateBody(form({ target: "background", prompt: "x" }));
     expect(body.target).toBe("background");
+    expect("targetRef" in body).toBe(false);
   });
 
   it("includes target-ref only for split/send-to-existing", () => {
@@ -78,7 +83,6 @@ describe("buildCreateBody", () => {
       buildCreateBody(form({ target: "split", targetRef: "%1", prompt: "x" }))
         .targetRef,
     ).toBe("%1");
-    // new-window ignores a stray targetRef.
     expect(
       "targetRef" in
         buildCreateBody(form({ target: "new-window", targetRef: "%1" })),
@@ -120,8 +124,12 @@ describe("resolveTaskActivation", () => {
 });
 
 describe("visibleCreateFieldsFor", () => {
-  it("hides target-ref except for split/send-to-existing", () => {
-    expect(visibleCreateFieldsFor(form())).not.toContain("targetRef");
+  it("has no separate background field and hides target-ref by default", () => {
+    const fields = visibleCreateFieldsFor(form());
+    expect(fields).not.toContain("background");
+    expect(fields).not.toContain("targetRef");
+  });
+  it("shows target-ref for split/send-to-existing", () => {
     expect(visibleCreateFieldsFor(form({ target: "split" }))).toContain(
       "targetRef",
     );
@@ -129,19 +137,75 @@ describe("visibleCreateFieldsFor", () => {
       visibleCreateFieldsFor(form({ target: "send-to-existing" })),
     ).toContain("targetRef");
   });
-  it("hides target-ref in background mode even for split", () => {
-    expect(
-      visibleCreateFieldsFor(form({ target: "split", background: true })),
-    ).not.toContain("targetRef");
+  it("hides target-ref for a background target", () => {
+    expect(visibleCreateFieldsFor(form({ target: "background" }))).not.toContain(
+      "targetRef",
+    );
+  });
+});
+
+describe("session/project filtering", () => {
+  it("matches a session by cwd or derived project name", () => {
+    expect(sessionMatchesProject(OPTIONS.sessions[0], "/Users/test/app")).toBe(
+      true,
+    );
+    // Basename match against the project name.
+    expect(sessionMatchesProject(OPTIONS.sessions[1], "/somewhere/api")).toBe(
+      true,
+    );
+    expect(sessionMatchesProject(OPTIONS.sessions[0], "/Users/test/api")).toBe(
+      false,
+    );
+  });
+  it("sessionsForProject returns only the project's panes", () => {
+    const panes = sessionsForProject(OPTIONS, "/Users/test/app").map(
+      (s) => s.pane,
+    );
+    expect(panes).toEqual(["%1"]);
   });
 });
 
 describe("cycleOptionsFor", () => {
+  it("cycles target through all four placements incl. background", () => {
+    expect(cycleOptionsFor("target", OPTIONS)).toEqual([
+      "new-window",
+      "split",
+      "send-to-existing",
+      "background",
+    ]);
+  });
   it("prepends an empty (none) choice for template", () => {
     expect(cycleOptionsFor("template", OPTIONS)).toEqual(["", "review", "fix"]);
   });
-  it("returns the pane list for target-ref and empty for prompt", () => {
-    expect(cycleOptionsFor("targetRef", OPTIONS)).toEqual(["%1", "%2"]);
+  it("filters target-ref panes to the given project", () => {
+    expect(cycleOptionsFor("targetRef", OPTIONS, "/Users/test/app")).toEqual([
+      "%1",
+    ]);
     expect(cycleOptionsFor("prompt", OPTIONS)).toEqual([]);
+  });
+});
+
+describe("projectPickerChoices", () => {
+  const projects = ["/Users/test/app", "/Users/test/api", "/work/thing"];
+  it("returns all known projects for an empty query", () => {
+    expect(projectPickerChoices(projects, "").map((c) => c.value)).toEqual(
+      projects,
+    );
+  });
+  it("filters by case-insensitive substring", () => {
+    const values = projectPickerChoices(projects, "AP").map((c) => c.value);
+    // Both known matches lead; a 'use typed path' hatch trails (query != exact).
+    expect(values.slice(0, 2)).toEqual(["/Users/test/app", "/Users/test/api"]);
+    expect(values[values.length - 1]).toBe("AP");
+  });
+  it("appends a 'use typed path' choice for a novel query", () => {
+    const choices = projectPickerChoices(projects, "/brand/new");
+    const last = choices[choices.length - 1];
+    expect(last.value).toBe("/brand/new");
+    expect(last.name).toContain("Use");
+  });
+  it("does not duplicate an exact known project as a typed path", () => {
+    const choices = projectPickerChoices(projects, "/work/thing");
+    expect(choices.filter((c) => c.value === "/work/thing")).toHaveLength(1);
   });
 });

@@ -2663,16 +2663,15 @@ describe("store", () => {
       targetRef: "",
       template: "",
       prompt: "",
-      background: false,
       runNow: true,
     };
     const options = {
       agents: ["claude", "codex"],
       templates: ["review", "fix"],
-      projects: ["/a", "/b"],
+      projects: ["/a", "/b", "/c"],
       sessions: [
-        { pane: "%1", label: "%1 claude a" },
-        { pane: "%2", label: "%2 codex b" },
+        { pane: "%1", label: "%1 claude a", cwd: "/a", project: "a" },
+        { pane: "%2", label: "%2 codex b", cwd: "/b", project: "b" },
       ],
       templateHasPrompt: { review: true, fix: false },
     };
@@ -2694,26 +2693,32 @@ describe("store", () => {
       expect(store.state.createForm.prompt).toBe("");
     });
 
-    it("cycleCreateField wraps through the option list and toggles booleans", () => {
+    it("cycleCreateField wraps agent/template and cycles target incl. background", () => {
       const store = createTUIStore({ groupBy: "none" });
       store.actions.openCreateModal({ ...form }, options);
-      // agent: claude → codex → wrap → claude
       store.actions.cycleCreateField("agent", 1);
       expect(store.state.createForm.agent).toBe("codex");
       store.actions.cycleCreateField("agent", 1);
       expect(store.state.createForm.agent).toBe("claude");
-      // template: "" → review (index 0 is the (none) entry)
       store.actions.cycleCreateField("template", 1);
       expect(store.state.createForm.template).toBe("review");
-      // background toggles regardless of direction
-      store.actions.cycleCreateField("background", 1);
-      expect(store.state.createForm.background).toBe(true);
+      // target cycles new-window → split → send-to-existing → background
+      store.actions.cycleCreateField("target", -1);
+      expect(store.state.createForm.target).toBe("background");
       // prompt is not cyclable
       store.actions.cycleCreateField("prompt", 1);
       expect(store.state.createForm.prompt).toBe("");
     });
 
-    it("createFormValid gates on a prompt or a prompt-bearing template", () => {
+    it("runNow toggles via cycleCreateField", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      expect(store.state.createForm.runNow).toBe(true);
+      store.actions.cycleCreateField("runNow", 1);
+      expect(store.state.createForm.runNow).toBe(false);
+    });
+
+    it("createFormValid gates on prompt/template and a resolved pane", () => {
       const store = createTUIStore({ groupBy: "none" });
       store.actions.openCreateModal({ ...form }, options);
       expect(store.createFormValid()).toBe(false);
@@ -2723,9 +2728,14 @@ describe("store", () => {
       store.actions.setCreateField("prompt", "");
       store.actions.setCreateField("template", "review");
       expect(store.createFormValid()).toBe(true);
-      // Template without a prompt → not valid.
       store.actions.setCreateField("template", "fix");
       expect(store.createFormValid()).toBe(false);
+      // split needs a pane: invalid until one is chosen.
+      store.actions.setCreateField("prompt", "go");
+      store.actions.setCreateField("target", "split");
+      expect(store.createFormValid()).toBe(false);
+      store.actions.setCreateField("targetRef", "%1");
+      expect(store.createFormValid()).toBe(true);
     });
 
     it("target-ref enters the focus set only for split/send-to-existing", () => {
@@ -2736,6 +2746,18 @@ describe("store", () => {
       expect(store.visibleCreateFields()).toContain("targetRef");
     });
 
+    it("clears a stale target-ref when the project changes", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal(
+        { ...form, project: "/a", target: "split", targetRef: "%1" },
+        options,
+      );
+      expect(store.state.createForm.targetRef).toBe("%1");
+      // Switching to project /b (where %1 doesn't live) drops the pane.
+      store.actions.setCreateField("project", "/b");
+      expect(store.state.createForm.targetRef).toBe("");
+    });
+
     it("moveCreateFocus clamps within the visible fields", () => {
       const store = createTUIStore({ groupBy: "none" });
       store.actions.openCreateModal({ ...form }, options);
@@ -2744,6 +2766,38 @@ describe("store", () => {
       store.actions.moveCreateFocus(99); // clamp high
       const n = store.visibleCreateFields().length;
       expect(store.state.createFocusIndex).toBe(n - 1);
+    });
+
+    it("project picker filters and commits a choice", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      store.actions.openProjectPicker();
+      expect(store.state.projectPickerOpen).toBe(true);
+      // All known projects shown initially.
+      expect(store.projectPickerChoices().map((c) => c.value)).toEqual([
+        "/a",
+        "/b",
+        "/c",
+      ]);
+      store.actions.setProjectQuery("/c");
+      expect(store.projectPickerChoices()[0].value).toBe("/c");
+      store.actions.chooseProject();
+      expect(store.state.createForm.project).toBe("/c");
+      expect(store.state.projectPickerOpen).toBe(false);
+    });
+
+    it("project picker offers a typed path and moveProjectPicker clamps", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      store.actions.openProjectPicker();
+      store.actions.setProjectQuery("/brand/new");
+      // The synthetic 'use typed path' is the last choice.
+      const choices = store.projectPickerChoices();
+      expect(choices[choices.length - 1].value).toBe("/brand/new");
+      store.actions.moveProjectPicker(99);
+      expect(store.state.projectPickerIndex).toBe(choices.length - 1);
+      store.actions.chooseProject();
+      expect(store.state.createForm.project).toBe("/brand/new");
     });
   });
 });

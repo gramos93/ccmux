@@ -6,16 +6,21 @@ import { getPreferencesSync } from "../../lib/preferences";
 import { getAgents } from "../../lib/agents";
 
 /**
- * The pane-placement targets offered by the create form's `target` cycle.
- * `background` is not in this list — it is expressed by the separate
- * `background` toggle (sugar for the CLI's `--bg`), so the effective target
- * sent to the daemon is `background ? "background" : target`.
+ * The values the create form's `Target` field cycles through. `background`
+ * is one of them (headless invoke) — it is NOT a separate toggle, so a task
+ * is exactly one of these placements (mutually exclusive by construction).
  */
-export const PANE_TARGETS: TaskTarget[] = [
+export const TARGET_CYCLE: TaskTarget[] = [
   "new-window",
   "split",
   "send-to-existing",
+  "background",
 ];
+
+/** Whether a target needs a pane reference (the `Pane` field / target-ref). */
+export function targetNeedsRef(target: TaskTarget): boolean {
+  return target === "split" || target === "send-to-existing";
+}
 
 /** A focusable field in the create form, in display order (target-ref is
  *  conditionally present — see {@link visibleCreateFieldsFor}). */
@@ -26,30 +31,30 @@ export type CreateField =
   | "targetRef"
   | "template"
   | "prompt"
-  | "background"
   | "runNow";
 
 /** The editable state of the create form. */
 export interface CreateFormState {
   agent: string;
   project: string;
-  /** One of {@link PANE_TARGETS}; the headless case is carried by `background`. */
+  /** One of {@link TARGET_CYCLE}, including the headless `background`. */
   target: TaskTarget;
   /** tmux pane for split/send-to-existing; "" when none/not applicable. */
   targetRef: string;
   /** Template name, or "" for none. */
   template: string;
   prompt: string;
-  /** Headless invoke (maps to effective target `background`). */
-  background: boolean;
-  /** Run the task immediately after creating it. */
+  /** Run the task immediately after creating it (off = backlog/pending). */
   runNow: boolean;
 }
 
-/** A live session offered as a target-ref choice. */
+/** A live session offered as a target-ref choice, carrying enough to filter
+ *  it by project. */
 export interface CreateSessionOption {
   pane: string;
   label: string;
+  cwd: string;
+  project: string;
 }
 
 /** The choice lists a form is built from, sourced from local config + live
@@ -64,19 +69,21 @@ export interface CreateOptions {
   templateHasPrompt: Record<string, boolean>;
 }
 
-/** De-dupe while preserving first-seen order. */
+/** De-dupe while preserving first-seen order, dropping empties. */
 function uniq(values: string[]): string[] {
   return [...new Set(values.filter((v) => v.length > 0))];
 }
 
 /**
  * Build the create form's choice lists from local preferences, the built-in
- * agent registry, and the current live sessions. Reads `getPreferencesSync()`
- * (no async, cheap) so the modal can open synchronously.
+ * agent registry, the current live sessions, and the projects that already
+ * have tasks. Reads `getPreferencesSync()` (no async, cheap) so the modal can
+ * open synchronously.
  */
 export function buildCreateOptions(
   liveSessions: EnrichedSession[],
   defaultProject: string,
+  taskProjects: string[] = [],
 ): CreateOptions {
   const prefs = getPreferencesSync();
   const agents = getAgents(prefs).map((a) => a.name);
@@ -87,10 +94,12 @@ export function buildCreateOptions(
   }
 
   // Project candidates: the contextual default first, then config projects,
-  // then the distinct cwds of live sessions.
+  // then the projects of existing tasks, then the distinct cwds of live
+  // sessions. De-duped, first-seen order.
   const projects = uniq([
     defaultProject,
     ...Object.keys(prefs.projects ?? {}),
+    ...taskProjects,
     ...liveSessions.map((s) => s.cwd),
   ]);
 
@@ -99,6 +108,8 @@ export function buildCreateOptions(
     .map((s) => ({
       pane: s.tmuxPane!,
       label: `${s.tmuxPane} ${s.agentType} ${basename(s.cwd)}`,
+      cwd: s.cwd,
+      project: s.project,
     }));
 
   return { agents, templates, projects, sessions, templateHasPrompt };
@@ -106,9 +117,9 @@ export function buildCreateOptions(
 
 /**
  * Seed the initial form for a project via the same default cascade the daemon
- * resolves (`defaults → projects[project] → templates`). A config default of
- * `target: "background"` is expressed as `background: true` with a pane-target
- * fallback, since the form's `target` cycle covers only the pane placements.
+ * resolves (`defaults → projects[project] → templates`). `target` is kept as
+ * resolved — including `background` — since the form's `Target` cycle covers
+ * every placement.
  */
 export function buildInitialForm(
   options: CreateOptions,
@@ -124,39 +135,47 @@ export function buildInitialForm(
     { project: defaultProject, input: {} },
   );
 
-  const resolvedTarget = resolved.target ?? DEFAULT_TASK_TARGET;
-  const background = resolvedTarget === "background";
-  const target: TaskTarget = background ? DEFAULT_TASK_TARGET : resolvedTarget;
-
   return {
     agent: resolved.agent ?? options.agents[0] ?? "claude",
     project: defaultProject || options.projects[0] || "",
-    target,
+    target: resolved.target ?? DEFAULT_TASK_TARGET,
     targetRef: "",
     template: "",
     prompt: resolved.prompt ?? "",
-    background,
     runNow: true,
   };
 }
 
 /** The visible, focusable fields for a form state (target-ref only shows for
- *  pane split/send-to-existing and never in background mode). */
+ *  the pane split/send-to-existing placements). */
 export function visibleCreateFieldsFor(form: CreateFormState): CreateField[] {
   const fields: CreateField[] = ["agent", "project", "target"];
-  if (
-    !form.background &&
-    (form.target === "split" || form.target === "send-to-existing")
-  ) {
-    fields.push("targetRef");
-  }
-  fields.push("template", "prompt", "background", "runNow");
+  if (targetNeedsRef(form.target)) fields.push("targetRef");
+  fields.push("template", "prompt", "runNow");
   return fields;
 }
 
+/** Whether a live session belongs to the given project (matches its cwd, or
+ *  its derived project name against the project path's basename). An empty
+ *  project matches everything. */
+export function sessionMatchesProject(
+  session: CreateSessionOption,
+  project: string,
+): boolean {
+  if (!project) return true;
+  return session.cwd === project || session.project === basename(project);
+}
+
+/** The live sessions in a given project — the target-ref candidates. */
+export function sessionsForProject(
+  options: CreateOptions,
+  project: string,
+): CreateSessionOption[] {
+  return options.sessions.filter((s) => sessionMatchesProject(s, project));
+}
+
 /** The request body a create form submits to `POST /tasks`. Unset fields are
- *  omitted so the daemon's default cascade still applies. `background` collapses
- *  into `target`; `runNow` is handled by the caller (a follow-up run), not here. */
+ *  omitted so the daemon's default cascade still applies. */
 export interface CreateBody {
   project: string;
   agent?: string;
@@ -168,13 +187,13 @@ export interface CreateBody {
 
 /** Shape a create form into the `POST /tasks` body (pure). */
 export function buildCreateBody(form: CreateFormState): CreateBody {
-  const target: TaskTarget = form.background ? "background" : form.target;
-  const needsRef = target === "split" || target === "send-to-existing";
-  const body: CreateBody = { project: form.project, target };
+  const body: CreateBody = { project: form.project, target: form.target };
   if (form.agent) body.agent = form.agent;
   if (form.prompt.trim()) body.prompt = form.prompt;
   if (form.template) body.template = form.template;
-  if (needsRef && form.targetRef) body.targetRef = form.targetRef;
+  if (targetNeedsRef(form.target) && form.targetRef) {
+    body.targetRef = form.targetRef;
+  }
   return body;
 }
 
@@ -198,10 +217,12 @@ export function resolveTaskActivation(task: TaskInstance): TaskActivation {
 }
 
 /** The option list a cyclable field cycles through (empty for text/toggle
- *  fields, which are handled separately). */
+ *  fields, which are handled separately). `targetRef` is filtered to the
+ *  selected project's live sessions. */
 export function cycleOptionsFor(
   field: CreateField,
   options: CreateOptions,
+  project = "",
 ): string[] {
   switch (field) {
     case "agent":
@@ -209,12 +230,39 @@ export function cycleOptionsFor(
     case "project":
       return options.projects;
     case "target":
-      return PANE_TARGETS;
+      return TARGET_CYCLE;
     case "targetRef":
-      return options.sessions.map((s) => s.pane);
+      return sessionsForProject(options, project).map((s) => s.pane);
     case "template":
       return ["", ...options.templates];
     default:
       return [];
   }
+}
+
+/** A choice shown in the searchable project picker. A synthetic "use typed
+ *  path" entry is included when the query is a new value. */
+export interface ProjectChoice {
+  name: string;
+  value: string;
+}
+
+/**
+ * Filter the known projects by a query (case-insensitive substring). When the
+ * query is non-empty and not already an exact known project, append a synthetic
+ * "Use "<query>"" choice so an arbitrary path can be launched too.
+ */
+export function projectPickerChoices(
+  projects: string[],
+  query: string,
+): ProjectChoice[] {
+  const q = query.trim();
+  const lower = q.toLowerCase();
+  const matches = (q ? projects.filter((p) => p.toLowerCase().includes(lower)) : projects).map(
+    (p) => ({ name: p, value: p }),
+  );
+  if (q.length > 0 && !projects.some((p) => p === q)) {
+    matches.push({ name: `Use "${q}"`, value: q });
+  }
+  return matches;
 }

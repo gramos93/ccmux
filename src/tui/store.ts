@@ -30,10 +30,14 @@ import {
 } from "./utils/task-grouping";
 import {
   cycleOptionsFor,
+  projectPickerChoices,
+  sessionMatchesProject,
+  targetNeedsRef,
   visibleCreateFieldsFor,
   type CreateField,
   type CreateFormState,
   type CreateOptions,
+  type ProjectChoice,
 } from "./utils/task-create";
 import type { IconStyle } from "../lib/icons";
 import type {
@@ -108,6 +112,10 @@ interface TUIState {
   createOptions: CreateOptions;
   /** Index into the modal's visible fields of the currently-focused field. */
   createFocusIndex: number;
+  /** Searchable project-picker sub-overlay (opened from the Project field). */
+  projectPickerOpen: boolean;
+  projectQuery: string;
+  projectPickerIndex: number;
 }
 
 /** Empty form/options used as the store's initial (closed-modal) value. */
@@ -118,7 +126,6 @@ const EMPTY_CREATE_FORM: CreateFormState = {
   targetRef: "",
   template: "",
   prompt: "",
-  background: false,
   runNow: true,
 };
 
@@ -406,6 +413,9 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     createForm: { ...EMPTY_CREATE_FORM },
     createOptions: { ...EMPTY_CREATE_OPTIONS },
     createFocusIndex: 0,
+    projectPickerOpen: false,
+    projectQuery: "",
+    projectPickerIndex: 0,
   });
 
   // Effect: capture pane content for search (debounced)
@@ -698,9 +708,16 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
   });
   const createFormValid = createMemo((): boolean => {
     const f = state.createForm;
+    // split/send-to-existing must resolve to a concrete pane in the project.
+    if (targetNeedsRef(f.target) && !f.targetRef) return false;
     if (f.prompt.trim().length > 0) return true;
     return Boolean(f.template && state.createOptions.templateHasPrompt[f.template]);
   });
+  // Searchable project-picker choices for the current query (known projects
+  // filtered by substring, plus a "use typed path" escape hatch).
+  const projectPickerChoicesMemo = createMemo((): ProjectChoice[] =>
+    projectPickerChoices(state.createOptions.projects, state.projectQuery),
+  );
 
   const selectedIndex = trackedMemo("selectedIndex", () => {
     const items = flatItems();
@@ -847,6 +864,17 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     }
   }
 
+  /** Drop the form's target-ref when it no longer names a live session in the
+   *  currently-selected project (after a project/target change). */
+  function clearTargetRefIfStale() {
+    const { targetRef, project } = state.createForm;
+    if (!targetRef) return;
+    const match = state.createOptions.sessions.find(
+      (s) => s.pane === targetRef && sessionMatchesProject(s, project),
+    );
+    if (!match) setState("createForm", "targetRef", "");
+  }
+
   const actions = {
     setSessions(sessions: EnrichedSession[]) {
       // Preserve client-synthesized subprocess invoke rows. They live only
@@ -986,15 +1014,22 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
         setState("createForm", { ...EMPTY_CREATE_FORM });
         setState("createOptions", { ...EMPTY_CREATE_OPTIONS });
         setState("createFocusIndex", 0);
+        setState("projectPickerOpen", false);
+        setState("projectQuery", "");
+        setState("projectPickerIndex", 0);
       });
     },
 
-    /** Set a single form field (text entry for prompt; direct writes). */
+    /** Set a single form field (text entry for prompt; direct writes). Setting
+     *  `project` drops a target-ref that no longer belongs to the new project. */
     setCreateField<K extends keyof CreateFormState>(
       key: K,
       value: CreateFormState[K],
     ) {
-      setState("createForm", key, value);
+      batch(() => {
+        setState("createForm", key, value);
+        if (key === "project") clearTargetRefIfStale();
+      });
     },
 
     /** Move focus between the visible fields, clamped to the ends. */
@@ -1007,24 +1042,80 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       setState("createFocusIndex", next);
     },
 
-    /** Cycle a field's value by `dir` (±1). Toggles the boolean fields; wraps
-     *  through the option list for the cyclable ones; no-op for `prompt`. */
+    /** Cycle a field's value by `dir` (±1). Toggles `runNow`; wraps through the
+     *  option list for the cyclable ones; no-op for `prompt`. Cycling `target`
+     *  or `project` drops a now-stale target-ref. */
     cycleCreateField(field: CreateField, dir: number) {
-      if (field === "background") {
-        setState("createForm", "background", !state.createForm.background);
-        return;
-      }
       if (field === "runNow") {
         setState("createForm", "runNow", !state.createForm.runNow);
         return;
       }
       if (field === "prompt") return;
-      const list = cycleOptionsFor(field, state.createOptions);
+      const list = cycleOptionsFor(
+        field,
+        state.createOptions,
+        state.createForm.project,
+      );
       if (list.length === 0) return;
       const current = String(state.createForm[field] ?? "");
       const cur = list.indexOf(current);
       const nextIdx = ((cur === -1 ? 0 : cur) + dir + list.length) % list.length;
-      setState("createForm", field, list[nextIdx]);
+      batch(() => {
+        setState("createForm", field, list[nextIdx]);
+        if (field === "project" || field === "target") clearTargetRefIfStale();
+      });
+    },
+
+    /** Open the searchable project picker, seeded empty (shows all known). */
+    openProjectPicker() {
+      batch(() => {
+        setState("projectPickerOpen", true);
+        setState("projectQuery", "");
+        setState("projectPickerIndex", 0);
+      });
+    },
+
+    closeProjectPicker() {
+      batch(() => {
+        setState("projectPickerOpen", false);
+        setState("projectQuery", "");
+        setState("projectPickerIndex", 0);
+      });
+    },
+
+    /** Update the picker query and reset the highlight to the first match. */
+    setProjectQuery(query: string) {
+      batch(() => {
+        setState("projectQuery", query);
+        setState("projectPickerIndex", 0);
+      });
+    },
+
+    /** Move the picker highlight, clamped to the current match count. */
+    moveProjectPicker(delta: number) {
+      const n = projectPickerChoicesMemo().length;
+      if (n === 0) return;
+      const next = Math.max(
+        0,
+        Math.min(n - 1, state.projectPickerIndex + delta),
+      );
+      setState("projectPickerIndex", next);
+    },
+
+    /** Commit the highlighted project choice to the form and close the picker.
+     *  Drops a target-ref that no longer matches the chosen project. */
+    chooseProject() {
+      const choices = projectPickerChoicesMemo();
+      const choice = choices[state.projectPickerIndex];
+      batch(() => {
+        if (choice) {
+          setState("createForm", "project", choice.value);
+          clearTargetRefIfStale();
+        }
+        setState("projectPickerOpen", false);
+        setState("projectQuery", "");
+        setState("projectPickerIndex", 0);
+      });
     },
 
     /** An invoke worker began executing (invocation_started SSE event). */
@@ -1500,6 +1591,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     visibleCreateFields,
     focusedCreateField,
     createFormValid,
+    projectPickerChoices: projectPickerChoicesMemo,
     actions,
     tick,
     bumpTick: () => setTick((t) => t + 1),

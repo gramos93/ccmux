@@ -937,6 +937,27 @@ export function App(props: AppProps) {
    *  the prompt field is focused, unhandled keys fall through to its <input>. */
   function handleCreateModalKey(event: KeyEvent) {
     const key = event.name;
+    // The searchable project picker owns the keyboard while open.
+    if (store.state.projectPickerOpen) {
+      if (key === "escape") {
+        store.actions.closeProjectPicker();
+        event.preventDefault();
+        return;
+      }
+      if (key === "up") {
+        store.actions.moveProjectPicker(-1);
+        event.preventDefault();
+        return;
+      }
+      if (key === "down") {
+        store.actions.moveProjectPicker(1);
+        event.preventDefault();
+        return;
+      }
+      // enter is handled by the picker input's onSubmit; typed chars flow to
+      // its <input> (onInput → setProjectQuery). Don't intercept them.
+      return;
+    }
     if (key === "escape") {
       store.actions.closeCreateModal();
       event.preventDefault();
@@ -967,6 +988,13 @@ export function App(props: AppProps) {
     // h/l and left/right for cursor movement) — only the nav/submit/cancel
     // keys above are intercepted for it.
     if (field === "prompt") return;
+    // Space on the Project field opens the searchable picker (rather than
+    // cycling), while left/right still quick-cycle the known projects.
+    if ((key === "space" || key === " ") && field === "project") {
+      store.actions.openProjectPicker();
+      event.preventDefault();
+      return;
+    }
     if (key === "left" || key === "h") {
       store.actions.cycleCreateField(field, -1);
       event.preventDefault();
@@ -1585,6 +1613,12 @@ export function App(props: AppProps) {
             focusedField={store.focusedCreateField()}
             valid={store.createFormValid()}
             onPromptInput={(v) => store.actions.setCreateField("prompt", v)}
+            projectPickerOpen={store.state.projectPickerOpen}
+            projectQuery={store.state.projectQuery}
+            projectChoices={store.projectPickerChoices()}
+            projectPickerIndex={store.state.projectPickerIndex}
+            onProjectQueryInput={(v) => store.actions.setProjectQuery(v)}
+            onProjectPickerSubmit={() => store.actions.chooseProject()}
           />
         </Show>
 
