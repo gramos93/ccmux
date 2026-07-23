@@ -1,15 +1,15 @@
 ## 1. Store: tasks slice + view (`src/tui/store.ts`)
 
-- [ ] 1.1 Add `tasks: TaskInstance[]` to `TUIState` and init `tasks: []` in `createStore`
-- [ ] 1.2 Add actions `setTasks`/`addTask`/`updateTask` (replace-by-`id` via `findIndex`)/`removeTask` (filter by `id`), mirroring the session actions
-- [ ] 1.3 Add `reconcileTasks(snapshot)` copying the `reconcileInvocations` shape (wholesale replace)
-- [ ] 1.4 Add `view: "sessions" | "tasks"` to `TUIState` (default `"sessions"`) + a `toggleView`/`setView` action
+- [x] 1.1 Add `tasks: TaskInstance[]` to `TUIState` and init `tasks: []` in `createStore`
+- [x] 1.2 Add actions `setTasks`/`addTask`/`updateTask` (replace-by-`id` via `findIndex`)/`removeTask` (filter by `id`), mirroring the session actions
+- [x] 1.3 Add `reconcileTasks(snapshot)` copying the `reconcileInvocations` shape (wholesale replace)
+- [x] 1.4 Add `view: "sessions" | "tasks"` to `TUIState` (default `"sessions"`) + a `toggleView`/`setView` action
 
 ## 2. SSE wiring (`src/tui/App.tsx` + `src/tui/utils/sse.ts`)
 
-- [ ] 2.1 `sse.ts`: extend `onInit` to `(sessions, activePaneId, invocations, tasks?)` and pass `event.tasks` from the `init` dispatch arm
-- [ ] 2.2 `App.tsx`: in the `SSEClient` literal add `onTaskCreated`→`addTask`, `onTaskUpdated`→`updateTask`, `onTaskRemoved`→`removeTask`
-- [ ] 2.3 `App.tsx`: `onInit` calls `store.actions.reconcileTasks(tasks ?? [])`
+- [x] 2.1 `sse.ts`: extend `onInit` to `(sessions, activePaneId, invocations, tasks?)` and pass `event.tasks` from the `init` dispatch arm
+- [x] 2.2 `App.tsx`: in the `SSEClient` literal add `onTaskCreated`→`addTask`, `onTaskUpdated`→`updateTask`, `onTaskRemoved`→`removeTask`
+- [x] 2.3 `App.tsx`: `onInit` calls `store.actions.reconcileTasks(tasks ?? [])`
 
 ## 3. Components (`src/tui/components/`)
 

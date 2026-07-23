@@ -568,7 +568,7 @@ export function App(props: AppProps) {
 
   onMount(() => {
     sseClient = new SSEClient({
-      onInit: (sessions, activePaneId, invocations) => {
+      onInit: (sessions, activePaneId, invocations, tasks) => {
         markStartup("first_data");
         reportStartup();
         store.actions.setSessions(sessions);
@@ -588,6 +588,8 @@ export function App(props: AppProps) {
         // (not a separate fetch) so it lands strictly before any later
         // `invocation_started`, leaving no window to prune a fresh worker.
         store.actions.reconcileInvocations(invocations ?? []);
+        // Seed the task board from the same snapshot (phase 3).
+        store.actions.reconcileTasks(tasks ?? []);
       },
       onSessionCreated: (session) => {
         store.actions.addSession(session);
@@ -603,6 +605,15 @@ export function App(props: AppProps) {
       },
       onInvocationFinished: (event) => {
         store.actions.finishInvocation(event);
+      },
+      onTaskCreated: (task) => {
+        store.actions.addTask(task);
+      },
+      onTaskUpdated: (task) => {
+        store.actions.updateTask(task);
+      },
+      onTaskRemoved: (id) => {
+        store.actions.removeTask(id);
       },
       onConnectionStateChange: (state) => {
         batch(() => {

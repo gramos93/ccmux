@@ -24,6 +24,8 @@ export interface SSECallbacks {
     // in `init`, see handleEvent's `?? []`); a snapshot-less connect (an older
     // daemon, or a test simulating the client) simply skips reconciliation.
     invocations?: InvocationSnapshotEntry[],
+    // Task snapshot for the board; older daemons omit it (treated as empty).
+    tasks?: TaskInstance[],
   ) => void;
   onSessionCreated: (session: EnrichedSession) => void;
   onSessionUpdated: (session: EnrichedSession) => void;
@@ -62,6 +64,7 @@ export function dispatchSSEEvent(
         event.sessions,
         event.activePaneId,
         event.invocations ?? [],
+        event.tasks ?? [],
       );
       break;
     case "session_created":

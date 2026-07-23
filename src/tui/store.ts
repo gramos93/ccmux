@@ -20,6 +20,7 @@ import type {
   InvocationSnapshotEntry,
 } from "../types";
 import type { ConnectionState } from "./utils/sse";
+import type { TaskInstance } from "../lib/task";
 import type { IconStyle } from "../lib/icons";
 import type {
   ColumnsConfig,
@@ -81,6 +82,11 @@ interface TUIState {
   breakpoints?: BreakpointConfig;
   groupBy: GroupBy;
   hideIdle: boolean;
+  /** Task board state (phase 3). `view` toggles the middle region between the
+   *  session list and the task board. */
+  view: "sessions" | "tasks";
+  tasks: TaskInstance[];
+  selectedTaskId: string | null;
 }
 
 interface TUIStoreOptions {
@@ -351,6 +357,9 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     breakpoints: options.breakpoints,
     groupBy: options.groupBy ?? DEFAULT_GROUP_BY,
     hideIdle: options.hideIdle ?? false,
+    view: "sessions",
+    tasks: [],
+    selectedTaskId: null,
   });
 
   // Effect: capture pane content for search (debounced)
@@ -814,6 +823,62 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
         }
         setState("selectedSessionId", null);
       }
+    },
+
+    // --- Task board (phase 3) -------------------------------------------------
+
+    /** Replace the whole task list (init snapshot / reconnect). */
+    reconcileTasks(tasks: TaskInstance[]) {
+      setState("tasks", tasks);
+      if (
+        state.selectedTaskId &&
+        !tasks.some((t) => t.id === state.selectedTaskId)
+      ) {
+        setState("selectedTaskId", null);
+      }
+    },
+
+    addTask(task: TaskInstance) {
+      const idx = state.tasks.findIndex((t) => t.id === task.id);
+      if (idx !== -1) setState("tasks", idx, task);
+      else setState("tasks", (t) => [...t, task]);
+    },
+
+    /** Upsert by id — a `task_updated` may arrive for a task we haven't seen
+     *  created (e.g. correlation refresh after a snapshot gap). */
+    updateTask(task: TaskInstance) {
+      const idx = state.tasks.findIndex((t) => t.id === task.id);
+      if (idx !== -1) setState("tasks", idx, task);
+      else setState("tasks", (t) => [...t, task]);
+    },
+
+    removeTask(id: string) {
+      setState("tasks", (t) => t.filter((task) => task.id !== id));
+      if (state.selectedTaskId === id) setState("selectedTaskId", null);
+    },
+
+    /** Toggle between the session list and the task board; auto-select the
+     *  first task when entering the board with none selected. */
+    toggleView() {
+      const next = state.view === "tasks" ? "sessions" : "tasks";
+      setState("view", next);
+      if (
+        next === "tasks" &&
+        !state.selectedTaskId &&
+        state.tasks.length > 0
+      ) {
+        setState("selectedTaskId", state.tasks[0].id);
+      }
+    },
+
+    /** Move task-board selection by delta over the current task list. */
+    moveTaskSelection(delta: number) {
+      const tasks = state.tasks;
+      if (tasks.length === 0) return;
+      const cur = tasks.findIndex((t) => t.id === state.selectedTaskId);
+      const base = cur === -1 ? 0 : cur;
+      const nextIdx = Math.max(0, Math.min(tasks.length - 1, base + delta));
+      setState("selectedTaskId", tasks[nextIdx].id);
     },
 
     /** An invoke worker began executing (invocation_started SSE event). */
