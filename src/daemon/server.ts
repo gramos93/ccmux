@@ -1663,6 +1663,9 @@ export class DaemonServer {
 
       case "removed": {
         const sessionId = event.sessionId!;
+        // Teardown a linked task (running → stopped) on true session death,
+        // regardless of visibility. No-op when the session maps to no task.
+        await this.taskManager.onSessionRemoved(sessionId);
         if (this.visibleSessions.has(sessionId)) {
           this.visibleSessions.delete(sessionId);
           return {
@@ -1708,7 +1711,11 @@ export class DaemonServer {
    * `Map.get` for the common (no matching task) case.
    */
   private async backfillTaskLink(session: Readonly<Session>): Promise<void> {
-    await this.taskManager.correlateSession(session.tmuxPane, session.id);
+    await this.taskManager.correlateSession(
+      session.tmuxPane,
+      session.id,
+      session.nativeSessionId,
+    );
   }
 
   private sendToClient(

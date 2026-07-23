@@ -253,6 +253,22 @@ export class TaskManager extends EventEmitter {
   }
 
   /**
+   * Teardown: when a session linked to a task is removed, transition that task
+   * `running → stopped` (retaining `nativeSessionId` so it can be resumed).
+   * No-op when the session maps to no task, or the task isn't `running` (e.g.
+   * a user-marked `done` task whose window is later closed keeps `done`).
+   */
+  async onSessionRemoved(sessionId: string): Promise<void> {
+    const taskId = this.linkedBySession.get(sessionId);
+    if (!taskId) return;
+    this.linkedBySession.delete(sessionId);
+    const task = await getTask(taskId);
+    if (!task || task.status !== "running") return;
+    const updated = await patchTask(taskId, { status: "stopped" });
+    if (updated) this.safeEmit({ kind: "updated", task: updated });
+  }
+
+  /**
    * Emit `"change"` without letting a throwing subscriber (e.g. the SSE
    * broadcast handler) escape the mutation — persistence has already
    * completed by the time we emit. Mirrors `InvocationManager.safeEmit`.

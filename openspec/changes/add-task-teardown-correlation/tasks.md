@@ -12,9 +12,9 @@
 
 ## 3. Teardown on session removal (`src/daemon/task-manager.ts` + `server.ts`)
 
-- [ ] 3.1 Add `onSessionRemoved(sessionId)`: look up `linkedBySession`; if the task is `running`, `patchTask(id, { status: "stopped" })` (retain `nativeSessionId`), drop the index entry, emit `updated`; no-op otherwise
-- [ ] 3.2 `backfillTaskLink(session)` passes `session.nativeSessionId` into `correlateSession`
-- [ ] 3.3 Call `taskManager.onSessionRemoved(sessionId)` from `sessionEventToSSE`'s `removed` branch (true session death only, not transient pane loss)
+- [x] 3.1 Add `onSessionRemoved(sessionId)`: look up `linkedBySession`; if the task is `running`, `patchTask(id, { status: "stopped" })` (retain `nativeSessionId`), drop the index entry, emit `updated`; no-op otherwise
+- [x] 3.2 `backfillTaskLink(session)` passes `session.nativeSessionId` into `correlateSession`
+- [x] 3.3 Call `taskManager.onSessionRemoved(sessionId)` from `sessionEventToSSE`'s `removed` branch (true session death only, not transient pane loss)
 
 ## 4. Tests
 
