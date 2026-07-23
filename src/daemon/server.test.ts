@@ -2526,7 +2526,7 @@ describe("task HTTP endpoints", () => {
     expect(res.status).toBe(400);
   });
 
-  it("POST /tasks resolving to new-session returns 400", async () => {
+  it("POST /tasks resolving to new-session is accepted", async () => {
     const { internals } = createServer();
     const res = await internals.handleRequest(
       jsonPost("/tasks", {
@@ -2536,7 +2536,9 @@ describe("task HTTP endpoints", () => {
         target: "new-session",
       }),
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { task: { target: string } };
+    expect(json.task.target).toBe("new-session");
   });
 
   it("POST /tasks/{id}/status with an unknown status returns 400", async () => {

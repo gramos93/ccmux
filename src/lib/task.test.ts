@@ -64,10 +64,9 @@ describe("validateNewTask", () => {
     prompt: "hi",
   };
 
-  it("rejects the reserved new-session target", () => {
-    expect(() =>
-      validateNewTask({ ...base, target: "new-session" as never }),
-    ).toThrow(/new-session/);
+  it("accepts the new-session target", () => {
+    const task = validateNewTask({ ...base, target: "new-session" });
+    expect(task.target).toBe("new-session");
   });
 
   it("rejects an unknown target", () => {

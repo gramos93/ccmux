@@ -43,8 +43,8 @@ export const Footer: Component<FooterProps> = (props) => {
         </Match>
         <Match when={props.taskView}>
           <text fg={theme.overlay}>
-            j/k nav · enter open/resume · r resume · x delete · b group · t
-            sessions · q quit
+            j/k nav · enter run/resume/open · c create · r run/resume · x delete
+            · b group · t sessions · q quit
           </text>
         </Match>
         <Match when={true}>

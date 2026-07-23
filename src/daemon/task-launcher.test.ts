@@ -1,5 +1,7 @@
 import { describe, expect, it } from "bun:test";
+import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
+import { basename, join } from "path";
 import {
   buildLaunchCommand,
   isAgentResumable,
@@ -28,7 +30,9 @@ function makeTask(over: Partial<TaskInstance> = {}): TaskInstance {
 
 /** Fake tmux: pane id for creates, scripted captures. No send-keys here —
  *  delivery goes through the injected sendLiteral/sendPrompt. */
-function fakeTmux(opts: { paneId?: string; captures?: string[] } = {}) {
+function fakeTmux(
+  opts: { paneId?: string; captures?: string[]; sessionExists?: boolean } = {},
+) {
   const paneId = opts.paneId ?? "%9";
   const captures = opts.captures ?? [""];
   const calls: string[][] = [];
@@ -36,8 +40,15 @@ function fakeTmux(opts: { paneId?: string; captures?: string[] } = {}) {
   const runTmux: TmuxRunner = async (args) => {
     calls.push(args);
     const cmd = args[0];
-    if (cmd === "new-window" || cmd === "split-window") {
+    if (
+      cmd === "new-window" ||
+      cmd === "split-window" ||
+      cmd === "new-session"
+    ) {
       return { code: 0, stdout: `${paneId}\n`, stderr: "" };
+    }
+    if (cmd === "has-session") {
+      return { code: opts.sessionExists ? 0 : 1, stdout: "", stderr: "" };
     }
     if (cmd === "capture-pane") {
       const out = captures[Math.min(capIdx, captures.length - 1)] ?? "";
@@ -320,10 +331,69 @@ describe("launchTask other targets", () => {
     ).rejects.toThrow(/background/);
   });
 
-  it("new-session is rejected", async () => {
-    const { runTmux } = fakeTmux({});
-    await expect(
-      launchTask(makeTask({ target: "new-session" as never }), deps(runTmux, recorder())),
-    ).rejects.toThrow(/Unsupported task target/);
+  it("new-session with no existing session creates a detached project session", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%20",
+      captures: ["$ ", "❯ "],
+      sessionExists: false,
+    });
+    const rec = recorder();
+    const res = await launchTask(
+      makeTask({ target: "new-session", project: proj, prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    // Gated on has-session, then created detached with the sanitized name.
+    expect(calls.some((c) => c[0] === "has-session")).toBe(true);
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toBeDefined();
+    expect(create).toContain("-d");
+    expect(create).toContain("-s");
+    expect(create).toContain(name); // project basename as the session name
+    expect(create).toContain(proj); // -c cwd
+    expect(res.paneId).toBe("%20");
+    expect(rec.prompt.at(-1)?.text).toBe("go");
+  });
+
+  it("new-session attaches to an existing same-named session (new-window -t)", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%21",
+      captures: ["$ ", "❯ "],
+      sessionExists: true,
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ target: "new-session", project: proj, prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    // No duplicate session: a window is opened in the existing one instead.
+    expect(calls.some((c) => c[0] === "new-session")).toBe(false);
+    const win = calls.find((c) => c[0] === "new-window");
+    expect(win).toBeDefined();
+    expect(win).toContain("-t");
+    expect(win).toContain(name);
+  });
+
+  it("resume of a new-session task uses the create-or-attach path", async () => {
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%22",
+      captures: ["$ ", "❯ "],
+      sessionExists: false,
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ target: "new-session", nativeSessionId: "nat-9" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+      { resume: true },
+    );
+    // Resume re-creates the project session rather than a bare new-window.
+    expect(calls.some((c) => c[0] === "has-session")).toBe(true);
+    expect(calls.some((c) => c[0] === "new-session")).toBe(true);
+    // The launch command is the resume command.
+    expect(rec.literal[0]?.text).toContain("--resume");
+    expect(rec.literal[0]?.text).toContain("nat-9");
   });
 });

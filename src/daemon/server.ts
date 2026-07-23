@@ -963,7 +963,7 @@ export class DaemonServer {
     }
     try {
       // `create` runs the cascade and `validateNewTask`, which throws on an
-      // invalid resolved spec (e.g. the reserved `new-session` target).
+      // invalid resolved spec (e.g. an unknown target).
       const task = await this.taskManager.create(
         body as { project: string; template?: string },
       );

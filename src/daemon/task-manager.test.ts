@@ -21,7 +21,7 @@ beforeEach(() => {
   // Note: getPreferences() reads PREFS_FILE, frozen at import to the real
   // config dir (the CCMUX_HOME override above only affects call-time state
   // paths). These tests assert the manager *routes through* resolveTask — the
-  // built-in target default and new-session rejection — which holds for any
+  // built-in target default and target validation — which holds for any
   // config without task keys. The full multi-layer cascade fold is unit-tested
   // in task.test.ts against explicit inputs.
 });
@@ -91,12 +91,11 @@ describe("TaskManager lifecycle events", () => {
     expect(await tm.get(task.id)).toEqual(task);
   });
 
-  it("rejects a resolved new-session target", async () => {
+  it("accepts a resolved new-session target", async () => {
     const tm = new TaskManager();
-    await expect(
-      tm.create({ ...body, target: "new-session" as never }),
-    ).rejects.toThrow(/new-session/);
-    expect(await tm.list()).toEqual([]);
+    const task = await tm.create({ ...body, target: "new-session" });
+    expect(task.target).toBe("new-session");
+    expect(await tm.list()).toHaveLength(1);
   });
 
   it("applies the built-in target default via the cascade", async () => {
