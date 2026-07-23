@@ -18,10 +18,10 @@
 
 ## 4. Tests
 
-- [ ] 4.1 Manager: `correlateSession` captures `nativeSessionId` at bind; refreshes it on a later call when it changed (emits once); no emit when unchanged
-- [ ] 4.2 Manager: `onSessionRemoved` transitions a linked `running` task → `stopped` keeping `nativeSessionId`; unrelated sessionId is a no-op; a linked `done` task is left unchanged
-- [ ] 4.3 Server: a `session_removed` event for a linked task stops it (drive `internals` with a linked task + removed event); an unrelated removal changes nothing
-- [ ] 4.4 Store: `patchTask` round-trips `nativeSessionId`; `stopped` validates as a status
+- [x] 4.1 Manager: `correlateSession` captures `nativeSessionId` at bind; refreshes it on a later call when it changed (emits once); no emit when unchanged
+- [x] 4.2 Manager: `onSessionRemoved` transitions a linked `running` task → `stopped` keeping `nativeSessionId`; unrelated sessionId is a no-op; a linked `done` task is left unchanged
+- [x] 4.3 Server: a `session_removed` event for a linked task stops it (drive `internals` with a linked task + removed event); an unrelated removal changes nothing
+- [x] 4.4 Store: `patchTask` round-trips `nativeSessionId`; `stopped` validates as a status
 
 ## 5. Verification
 

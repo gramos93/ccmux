@@ -2625,4 +2625,32 @@ describe("task HTTP endpoints", () => {
     const got = await internals.taskManager.get(id);
     expect(got?.sessionId).toBe("sess-1");
   });
+
+  it("a removed session stops its linked task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // pane %stub
+    await internals.backfillTaskLink({
+      id: "sess-1",
+      tmuxPane: "%stub",
+      nativeSessionId: "nat",
+    } as Session);
+
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "sess-1" });
+
+    const got = await internals.taskManager.get(id);
+    expect(got?.status).toBe("stopped");
+    expect(got?.nativeSessionId).toBe("nat");
+  });
+
+  it("an unrelated session removal changes no task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    await internals.backfillTaskLink({ id: "sess-1", tmuxPane: "%stub" } as Session);
+
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "other" });
+
+    expect((await internals.taskManager.get(id))?.status).toBe("running");
+  });
 });

@@ -144,6 +144,17 @@ describe("task-store patchTask", () => {
     expect(await listTasks()).toEqual([]);
   });
 
+  it("round-trips nativeSessionId and a stopped status", async () => {
+    const created = await createTask(spec);
+    const patched = await patchTask(created.id, {
+      status: "stopped",
+      nativeSessionId: "native-abc",
+    });
+    expect(patched?.status).toBe("stopped");
+    expect(patched?.nativeSessionId).toBe("native-abc");
+    expect((await getTask(created.id))?.nativeSessionId).toBe("native-abc");
+  });
+
   it("updateTaskStatus still works (regression)", async () => {
     const created = await createTask(spec);
     const updated = await updateTaskStatus(created.id, "running");

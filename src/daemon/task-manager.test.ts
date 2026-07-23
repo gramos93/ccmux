@@ -175,6 +175,71 @@ describe("TaskManager.run + correlation", () => {
   });
 });
 
+describe("TaskManager nativeSessionId capture + teardown", () => {
+  async function linkedTask() {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%1" }) });
+    const created = await tm.create(body);
+    await tm.run(created.id);
+    return { tm, id: created.id };
+  }
+
+  it("captures nativeSessionId at first bind", async () => {
+    const { tm, id } = await linkedTask();
+    await tm.correlateSession("%1", "sess", "native-abc");
+    const t = await tm.get(id);
+    expect(t?.sessionId).toBe("sess");
+    expect(t?.nativeSessionId).toBe("native-abc");
+  });
+
+  it("refreshes nativeSessionId on a later update when it changed (emit once)", async () => {
+    const { tm, id } = await linkedTask();
+    await tm.correlateSession("%1", "sess"); // bind, native not yet known
+    expect((await tm.get(id))?.nativeSessionId).toBeUndefined();
+
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+    await tm.correlateSession("%1", "sess", "native-late"); // arrives later
+    expect((await tm.get(id))?.nativeSessionId).toBe("native-late");
+    expect(events).toHaveLength(1);
+
+    // No change → no emit.
+    events.length = 0;
+    await tm.correlateSession("%1", "sess", "native-late");
+    expect(events).toHaveLength(0);
+  });
+
+  it("onSessionRemoved stops a linked running task, keeping nativeSessionId", async () => {
+    const { tm, id } = await linkedTask();
+    await tm.correlateSession("%1", "sess", "native-abc");
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    await tm.onSessionRemoved("sess");
+    const t = await tm.get(id);
+    expect(t?.status).toBe("stopped");
+    expect(t?.nativeSessionId).toBe("native-abc");
+    expect(events).toEqual([{ kind: "updated", task: t! }]);
+  });
+
+  it("onSessionRemoved is a no-op for an unlinked session", async () => {
+    const { tm, id } = await linkedTask();
+    await tm.correlateSession("%1", "sess", "native-abc");
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+    await tm.onSessionRemoved("other-sess");
+    expect(events).toHaveLength(0);
+    expect((await tm.get(id))?.status).toBe("running");
+  });
+
+  it("onSessionRemoved does not override a non-running (done) task", async () => {
+    const { tm, id } = await linkedTask();
+    await tm.correlateSession("%1", "sess", "native-abc");
+    await tm.updateStatus(id, "done");
+    await tm.onSessionRemoved("sess");
+    expect((await tm.get(id))?.status).toBe("done");
+  });
+});
+
 describe("TaskManager.run background", () => {
   const bgBody = {
     project: "p",
