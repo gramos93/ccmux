@@ -276,12 +276,16 @@ export class Daemon {
       invocationRegistry,
     );
     this.taskManager = new TaskManager({
-      launch: async (task) =>
-        launchTask(task, {
-          getAgentByType: (name) => this.agents.find((a) => a.name === name),
-          runTmux: realTmuxRunner,
-          prefs: await getPreferences(),
-        }),
+      launch: async (task, opts) =>
+        launchTask(
+          task,
+          {
+            getAgentByType: (name) => this.agents.find((a) => a.name === name),
+            runTmux: realTmuxRunner,
+            prefs: await getPreferences(),
+          },
+          opts,
+        ),
       // Background tasks route to the invoke subsystem. Throws for a
       // non-invokable agent so the run route returns 400.
       invoke: async (task) => {

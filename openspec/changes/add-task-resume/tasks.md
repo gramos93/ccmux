@@ -6,9 +6,9 @@
 
 ## 2. Manager resume (`src/daemon/task-manager.ts` + `index.ts`)
 
-- [ ] 2.1 Generalize the injected `TaskLaunchFn` to `(task, opts?: { resume?: boolean; prompt?: string }) => Promise<LaunchResult>`; `run` passes no opts
-- [ ] 2.2 Add `resume(id, prompt?)`: get task (undefined → caller 404); throw when not `stopped`, no `nativeSessionId`, or agent not resumable (→400); call `launch(task, { resume: true, prompt })`; `patchTask { status: "running", paneId }`; register `pendingCorrelation`; emit `updated`
-- [ ] 2.3 `index.ts`: wire the launch bridge to pass opts through (`launch: (task, opts) => launchTask(task, deps, opts)`); resumability check uses the daemon's agent lookup
+- [x] 2.1 Generalize the injected `TaskLaunchFn` to `(task, opts?: { resume?: boolean; prompt?: string }) => Promise<LaunchResult>`; `run` passes no opts
+- [x] 2.2 Add `resume(id, prompt?)`: get task (undefined → caller 404); throw when not `stopped`, no `nativeSessionId`, or agent not resumable (→400); call `launch(task, { resume: true, prompt })`; `patchTask { status: "running", paneId }`; register `pendingCorrelation`; emit `updated`
+- [x] 2.3 `index.ts`: wire the launch bridge to pass opts through (`launch: (task, opts) => launchTask(task, deps, opts)`); resumability check uses the daemon's agent lookup
 
 ## 3. Server route (`src/daemon/server.ts`)
 
@@ -23,7 +23,7 @@
 ## 5. Tests
 
 - [x] 5.1 Launcher: `buildLaunchCommand({resume})` → claude `--resume <native>`; agent `resumeCommand` `{id}` substitution; non-resumable throws. `launchTask({resume})` forces new-window, launches resume cmd, sends NO prompt; `launchTask({resume, prompt})` ready-waits + sends the follow-up (inject fakes)
-- [ ] 5.2 Manager: `resume` on a stopped+resumable task → running, new pane recorded, pendingCorrelation set, emits updated; `resume(id, prompt)` threads the follow-up to launch; rejects not-stopped / no-nativeSessionId / non-resumable agent; missing id → undefined
+- [x] 5.2 Manager: `resume` on a stopped+resumable task → running, new pane recorded, pendingCorrelation set, emits updated; `resume(id, prompt)` threads the follow-up to launch; rejects not-stopped / no-nativeSessionId / non-resumable agent; missing id → undefined
 - [ ] 5.3 Server: `POST /tasks/{id}/resume` → 404 missing, 400 not-stopped, 200 re-attach, 200 with a follow-up prompt in the body (stub launch)
 - [ ] 5.4 CLI: `resume <ref>` resolves prefix then POSTs `/resume`; `resume <ref> --prompt <t>` includes it in the body; `list --stopped` filters
 

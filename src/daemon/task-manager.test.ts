@@ -4,6 +4,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { setNowForTests } from "../lib/task-store";
 import { TaskManager, type TaskManagerEvent } from "./task-manager";
+import type { TaskInstance } from "../lib/task";
 import { taskEventToSSE } from "./server";
 
 const savedStateHome = process.env.CCMUX_STATE_HOME;
@@ -237,6 +238,64 @@ describe("TaskManager nativeSessionId capture + teardown", () => {
     await tm.updateStatus(id, "done");
     await tm.onSessionRemoved("sess");
     expect((await tm.get(id))?.status).toBe("done");
+  });
+});
+
+describe("TaskManager.resume", () => {
+  // Build a stopped, correlated task ready to resume.
+  async function stoppedTask(
+    launch: (
+      t: TaskInstance,
+      opts?: { resume?: boolean; prompt?: string },
+    ) => Promise<{ paneId?: string }>,
+  ) {
+    const tm = new TaskManager({ launch });
+    const created = await tm.create(body);
+    await tm.run(created.id);
+    await tm.correlateSession("%42", "sess", "nat-1");
+    await tm.onSessionRemoved("sess");
+    return { tm, id: created.id };
+  }
+
+  it("resumes a stopped task → running with the new pane, threading the follow-up", async () => {
+    const calls: Array<{ resume?: boolean; prompt?: string } | undefined> = [];
+    const launch = async (_t: unknown, opts?: { resume?: boolean; prompt?: string }) => {
+      calls.push(opts);
+      return { paneId: opts?.resume ? "%99" : "%42" };
+    };
+    const { tm, id } = await stoppedTask(launch);
+    expect((await tm.get(id))?.status).toBe("stopped");
+
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+    const resumed = await tm.resume(id, "keep going");
+
+    expect(resumed?.status).toBe("running");
+    expect(resumed?.paneId).toBe("%99");
+    expect(resumed?.nativeSessionId).toBe("nat-1"); // preserved
+    expect(calls.at(-1)).toEqual({ resume: true, prompt: "keep going" });
+    expect(events).toEqual([{ kind: "updated", task: resumed! }]);
+  });
+
+  it("rejects resuming a task that is not stopped", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
+    const created = await tm.create(body);
+    await tm.run(created.id); // running, not stopped
+    await expect(tm.resume(created.id)).rejects.toThrow(/not stopped/);
+  });
+
+  it("returns undefined for an unknown id", async () => {
+    const tm = new TaskManager({ launch: async () => ({ paneId: "%1" }) });
+    expect(await tm.resume("nope")).toBeUndefined();
+  });
+
+  it("propagates a launcher rejection (non-resumable / no native id)", async () => {
+    const launch = async (_t: unknown, opts?: { resume?: boolean }) => {
+      if (opts?.resume) throw new Error("agent does not support resume");
+      return { paneId: "%42" };
+    };
+    const { tm, id } = await stoppedTask(launch);
+    await expect(tm.resume(id)).rejects.toThrow(/does not support resume/);
   });
 });
 

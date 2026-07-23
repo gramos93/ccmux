@@ -26,7 +26,7 @@ import {
   type TaskSpec,
   type TaskStatus,
 } from "../lib/task";
-import type { LaunchResult } from "./task-launcher";
+import type { LaunchOpts, LaunchResult } from "./task-launcher";
 import type { InvokeResult } from "./invokers/types";
 
 /** Discriminated lifecycle event emitted on `"change"` after each mutation. */
@@ -41,8 +41,13 @@ export type CreateTaskBody = { project: string; template?: string } & Partial<
   Omit<TaskSpec, "project">
 >;
 
-/** Launches a task into a pane; injected so `run` is testable without tmux. */
-export type TaskLaunchFn = (task: TaskInstance) => Promise<LaunchResult>;
+/** Launches a task into a pane; injected so `run`/`resume` are testable without
+ *  tmux. `opts.resume` relaunches the agent's resume command; `opts.prompt` is
+ *  an optional follow-up submitted after ready. */
+export type TaskLaunchFn = (
+  task: TaskInstance,
+  opts?: LaunchOpts,
+) => Promise<LaunchResult>;
 
 /**
  * Dispatches a `background` task to the invoke subsystem. Returns the minted
@@ -170,6 +175,36 @@ export class TaskManager extends EventEmitter {
     const correlationPane = result.paneId ?? task.targetRef;
     if (correlationPane) this.pendingCorrelation.set(correlationPane, id);
 
+    this.safeEmit({ kind: "updated", task: updated });
+    return updated;
+  }
+
+  /**
+   * Resume a `stopped` task: relaunch the agent's resume command into a fresh
+   * pane (optionally submitting a follow-up `prompt`), re-register it for
+   * correlation, and set status back to `running`. Returns undefined for an
+   * unknown id (caller → 404). Throws when the task isn't `stopped`, or when
+   * the launcher rejects it (no `nativeSessionId` / non-resumable agent) —
+   * caller maps that to 400. `nativeSessionId` is preserved.
+   */
+  async resume(
+    id: string,
+    prompt?: string,
+  ): Promise<TaskInstance | undefined> {
+    const task = await this.get(id);
+    if (!task) return undefined;
+    if (task.status !== "stopped") {
+      throw new Error(`Task is not stopped (status: ${task.status})`);
+    }
+
+    const result = await this.launch(task, { resume: true, prompt });
+
+    const updated = await patchTask(id, {
+      status: "running",
+      ...(result.paneId ? { paneId: result.paneId } : {}),
+    });
+    if (!updated) return undefined;
+    if (result.paneId) this.pendingCorrelation.set(result.paneId, id);
     this.safeEmit({ kind: "updated", task: updated });
     return updated;
   }
