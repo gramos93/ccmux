@@ -13,16 +13,16 @@
 
 ## 3. Components (`src/tui/components/`)
 
-- [ ] 3.1 Add a task-status color helper (`pending→overlay, running→peach, stopped→yellow, done→green, failed→red`), shaped like `getStatusColor`
-- [ ] 3.2 `TaskRow.tsx`: short id + status badge + agent (`agentColorFor`) + project basename; for a `running` task, join `getSessionById(task.sessionId)` and render its `<StatusBadge>` activity (blank when unlinked)
-- [ ] 3.3 `TaskBoard.tsx`: flat list over `store.state.tasks` with `j/k` selection and an empty state; mirror `SessionList`/`SessionItem` styling
+- [x] 3.1 Add a task-status color helper (`pending→overlay, running→peach, stopped→yellow, done→green, failed→red`), shaped like `getStatusColor`
+- [x] 3.2 `TaskRow.tsx`: short id + status badge + agent (`agentColorFor`) + project basename; for a `running` task, join `getSessionById(task.sessionId)` and render its `<StatusBadge>` activity (blank when unlinked)
+- [x] 3.3 `TaskBoard.tsx`: flat list over `store.state.tasks` with `j/k` selection and an empty state; mirror `SessionList`/`SessionItem` styling
 
 ## 4. View branch + keybinds (`src/tui/App.tsx`)
 
-- [ ] 4.1 Branch the middle region on `store.state.view`: `<TaskBoard>` when `"tasks"`, else `<SessionList>`
-- [ ] 4.2 Add `t` to toggle the view
-- [ ] 4.3 Add a task-view guard in `useKeyboard` (early `if (view === "tasks") { … return }`) handling `j/k` nav, `enter`/`r` resume (stopped only), `x` delete, `t` back
-- [ ] 4.4 Resume/delete actions: fire-and-forget `POST ${getDaemonUrl()}/tasks/${id}/resume` / `DELETE ${getDaemonUrl()}/tasks/${id}` (no optimistic store mutation)
+- [x] 4.1 Branch the middle region on `store.state.view`: `<TaskBoard>` when `"tasks"`, else `<SessionList>`
+- [x] 4.2 Add `t` to toggle the view
+- [x] 4.3 Add a task-view guard in `useKeyboard` (early `if (view === "tasks") { … return }`) handling `j/k` nav, `enter`/`r` resume (stopped only), `x` delete, `t` back
+- [x] 4.4 Resume/delete actions: fire-and-forget `POST ${getDaemonUrl()}/tasks/${id}/resume` / `DELETE ${getDaemonUrl()}/tasks/${id}` (no optimistic store mutation)
 
 ## 5. Tests
 

@@ -50,6 +50,7 @@ import {
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
+import { TaskBoard } from "./components/TaskBoard";
 import { SearchInput } from "./components/SearchInput";
 import { Preview } from "./components/Preview";
 import { Toast } from "./components/Toast";
@@ -530,6 +531,27 @@ export function App(props: AppProps) {
     fetch(`${getDaemonUrl()}${killActionPath(session)}`, { method: "POST" });
   }
 
+  /** Resume the selected stopped task (re-attach). Fire-and-forget; the
+   *  task_updated broadcast flips the row to running. No-op unless stopped. */
+  function resumeSelectedTask() {
+    const task = store.state.tasks.find(
+      (t) => t.id === store.state.selectedTaskId,
+    );
+    if (!task || task.status !== "stopped") return;
+    fetch(`${getDaemonUrl()}/tasks/${task.id}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }).catch(() => {});
+  }
+
+  /** Delete the selected task. The task_removed broadcast drops the row. */
+  function deleteSelectedTask() {
+    const id = store.state.selectedTaskId;
+    if (!id) return;
+    fetch(`${getDaemonUrl()}/tasks/${id}`, { method: "DELETE" }).catch(() => {});
+  }
+
   function confirmDialogAction() {
     const action = store.state.confirmAction;
     const sessionId = store.state.confirmSessionId;
@@ -901,6 +923,30 @@ export function App(props: AppProps) {
       return;
     }
 
+    // `t` toggles the task board from either view.
+    if (key === "t") {
+      store.actions.toggleView();
+      event.preventDefault();
+      return;
+    }
+
+    // Task board: its own key set, isolated from session nav.
+    if (store.state.view === "tasks") {
+      if (key === "escape") {
+        store.actions.toggleView();
+      } else if (key === "j" || key === "down") {
+        store.actions.moveTaskSelection(1);
+      } else if (key === "k" || key === "up") {
+        store.actions.moveTaskSelection(-1);
+      } else if (key === "r" || key === "return" || key === "enter") {
+        resumeSelectedTask();
+      } else if (key === "x") {
+        deleteSelectedTask();
+      }
+      event.preventDefault();
+      return;
+    }
+
     // Clear pending g/z on any non-matching key
     if (key !== "g" && pendingG) {
       pendingG = false;
@@ -1219,6 +1265,10 @@ export function App(props: AppProps) {
         </Show>
 
         <box flexDirection="row" flexGrow={1}>
+          <Show
+            when={store.state.view === "tasks"}
+            fallback={
+              <>
           <SessionList
             items={store.flatItems()}
             selectedIndex={store.selectedIndex()}
@@ -1263,6 +1313,16 @@ export function App(props: AppProps) {
                 />
               )}
             </Show>
+          </Show>
+              </>
+            }
+          >
+            <TaskBoard
+              tasks={store.state.tasks}
+              selectedTaskId={store.state.selectedTaskId}
+              getSessionById={getSessionById}
+              iconStyle={store.state.iconStyle}
+            />
           </Show>
         </box>
 
