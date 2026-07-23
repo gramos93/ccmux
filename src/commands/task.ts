@@ -59,7 +59,8 @@ export function createTaskCommand(): Command {
   task
     .command("list")
     .description("List tasks")
-    .action(async () => {
+    .option("--stopped", "Show only stopped (resumable) tasks")
+    .action(async (options: { stopped?: boolean }) => {
       await ensureDaemon();
       let tasks: TaskInstance[];
       try {
@@ -68,8 +69,11 @@ export function createTaskCommand(): Command {
         console.error((err as Error).message);
         process.exit(1);
       }
+      if (options.stopped) {
+        tasks = tasks.filter((t) => t.status === "stopped");
+      }
       if (tasks.length === 0) {
-        console.log("No tasks.");
+        console.log(options.stopped ? "No stopped tasks." : "No tasks.");
         return;
       }
       for (const t of tasks) {
@@ -177,6 +181,33 @@ export function createTaskCommand(): Command {
         console.log(`Running task ${shortId(ran.id)} (${ran.status})`);
       } catch (err) {
         console.error(`Failed to run task: ${(err as Error).message}`);
+        process.exit(1);
+      }
+    });
+
+  task
+    .command("resume")
+    .description("Resume a stopped task (full id or unique prefix)")
+    .argument("<ref>", "Task id or unique id prefix")
+    .option("--prompt <text>", "Follow-up prompt to submit after resuming")
+    .action(async (ref: string, options: { prompt?: string }) => {
+      await ensureDaemon();
+      try {
+        const id = await resolveTaskRef(ref);
+        const res = await post(
+          `/tasks/${id}/resume`,
+          options.prompt ? { prompt: options.prompt } : {},
+        );
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          throw new Error(data.message ?? `HTTP ${res.status}`);
+        }
+        const { task: t } = (await res.json()) as { task: TaskInstance };
+        console.log(`Resumed task ${shortId(t.id)} (${t.status})`);
+      } catch (err) {
+        console.error(`Failed to resume task: ${(err as Error).message}`);
         process.exit(1);
       }
     });

@@ -165,6 +165,29 @@ describe("ccmux task run/rm prefix resolution", () => {
     const del = calls.find((c) => c.method === "DELETE");
     expect(del?.url.endsWith("/tasks/bbbb2222-full")).toBe(true);
   });
+
+  it("resume resolves a prefix then POSTs /resume (no prompt)", async () => {
+    stubFetch((url) =>
+      url.endsWith("/resume")
+        ? { task: { id: "aaaa1111-full", status: "running" } }
+        : { tasks },
+    );
+    await runCli("resume", "aaaa");
+    const r = calls.find((c) => c.url.endsWith("/resume"));
+    expect(r?.url.endsWith("/tasks/aaaa1111-full/resume")).toBe(true);
+    expect(r?.body).toEqual({}); // no follow-up
+  });
+
+  it("resume --prompt includes the follow-up in the body", async () => {
+    stubFetch((url) =>
+      url.endsWith("/resume")
+        ? { task: { id: "aaaa1111-full", status: "running" } }
+        : { tasks },
+    );
+    await runCli("resume", "aaaa", "--prompt", "keep going");
+    const r = calls.find((c) => c.url.endsWith("/resume"));
+    expect(r?.body).toEqual({ prompt: "keep going" });
+  });
 });
 
 describe("ccmux task list", () => {
@@ -173,5 +196,22 @@ describe("ccmux task list", () => {
     await runCli("list");
     expect(calls[0]).toMatchObject({ method: "GET" });
     expect(calls[0].url.endsWith("/tasks")).toBe(true);
+  });
+
+  it("--stopped filters to stopped tasks", async () => {
+    const logs: string[] = [];
+    const origLog = console.log;
+    console.log = (...a: unknown[]) => logs.push(a.join(" "));
+    stubFetch(() => ({
+      tasks: [
+        { id: "run-1", status: "running", agent: "claude", project: "/p" },
+        { id: "stop-1", status: "stopped", agent: "claude", project: "/p" },
+      ],
+    }));
+    await runCli("list", "--stopped");
+    console.log = origLog;
+    const out = logs.join("\n");
+    expect(out).toContain("stop-1"); // stopped task shown
+    expect(out).not.toContain("run-1"); // running task filtered out
   });
 });

@@ -17,15 +17,15 @@
 
 ## 4. CLI (`src/commands/task.ts`)
 
-- [ ] 4.1 Add `resume <ref>` subcommand with an optional `--prompt <text>`: `resolveTaskRef` then `POST /tasks/{id}/resume` with `{ prompt }` when provided
-- [ ] 4.2 Add `--stopped` flag to `list` filtering output to `status === "stopped"`
+- [x] 4.1 Add `resume <ref>` subcommand with an optional `--prompt <text>`: `resolveTaskRef` then `POST /tasks/{id}/resume` with `{ prompt }` when provided
+- [x] 4.2 Add `--stopped` flag to `list` filtering output to `status === "stopped"`
 
 ## 5. Tests
 
 - [x] 5.1 Launcher: `buildLaunchCommand({resume})` → claude `--resume <native>`; agent `resumeCommand` `{id}` substitution; non-resumable throws. `launchTask({resume})` forces new-window, launches resume cmd, sends NO prompt; `launchTask({resume, prompt})` ready-waits + sends the follow-up (inject fakes)
 - [x] 5.2 Manager: `resume` on a stopped+resumable task → running, new pane recorded, pendingCorrelation set, emits updated; `resume(id, prompt)` threads the follow-up to launch; rejects not-stopped / no-nativeSessionId / non-resumable agent; missing id → undefined
 - [x] 5.3 Server: `POST /tasks/{id}/resume` → 404 missing, 400 not-stopped, 200 re-attach, 200 with a follow-up prompt in the body (stub launch)
-- [ ] 5.4 CLI: `resume <ref>` resolves prefix then POSTs `/resume`; `resume <ref> --prompt <t>` includes it in the body; `list --stopped` filters
+- [x] 5.4 CLI: `resume <ref>` resolves prefix then POSTs `/resume`; `resume <ref> --prompt <t>` includes it in the body; `list --stopped` filters
 
 ## 6. Verification
 
