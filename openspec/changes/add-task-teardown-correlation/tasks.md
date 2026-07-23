@@ -1,8 +1,8 @@
 ## 1. Model (`src/lib/task.ts` + store)
 
-- [ ] 1.1 Add `"stopped"` to `TaskStatus` and `VALID_TASK_STATUSES`
-- [ ] 1.2 Add optional `nativeSessionId?: string` to `TaskInstance`
-- [ ] 1.3 Extend `patchTask`'s allowed keys with `nativeSessionId` (store)
+- [x] 1.1 Add `"stopped"` to `TaskStatus` and `VALID_TASK_STATUSES`
+- [x] 1.2 Add optional `nativeSessionId?: string` to `TaskInstance`
+- [x] 1.3 Extend `patchTask`'s allowed keys with `nativeSessionId` (store)
 
 ## 2. Correlation captures nativeSessionId (`src/daemon/task-manager.ts`)
 

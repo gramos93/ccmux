@@ -20,8 +20,14 @@ export type TaskTarget =
   | "send-to-existing"
   | "background";
 
-/** Lifecycle status of a task instance. */
-export type TaskStatus = "pending" | "running" | "done" | "failed";
+/** Lifecycle status of a task instance. `stopped` = an interactive task whose
+ *  agent/pane closed but whose `nativeSessionId` is retained (resumable). */
+export type TaskStatus =
+  | "pending"
+  | "running"
+  | "stopped"
+  | "done"
+  | "failed";
 
 export const VALID_TASK_TARGETS: TaskTarget[] = [
   "new-window",
@@ -33,6 +39,7 @@ export const VALID_TASK_TARGETS: TaskTarget[] = [
 export const VALID_TASK_STATUSES: TaskStatus[] = [
   "pending",
   "running",
+  "stopped",
   "done",
   "failed",
 ];
@@ -94,6 +101,12 @@ export interface TaskInstance extends TaskSpec {
   paneId?: string;
   /** The ccmux session correlated to this task by pane id. */
   sessionId?: string;
+  /**
+   * The agent's own conversation id (from `Session.nativeSessionId`). The
+   * durable anchor used to resume: `paneId`/`sessionId` are per-launch, but
+   * this persists across (re)launches.
+   */
+  nativeSessionId?: string;
   /** The invocation a `background` task was dispatched to. */
   invocationId?: string;
 }
