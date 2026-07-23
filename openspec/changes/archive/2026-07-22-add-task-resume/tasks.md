@@ -31,5 +31,5 @@
 
 - [x] 6.1 `bun run typecheck` passes
 - [x] 6.2 `bun test` passes
-- [ ] 6.3 Live smoke (real claude): create+run a task, close its pane → `stopped`; `ccmux task resume <id>` → claude relaunches with `--resume <nativeSessionId>` in a new pane (prior conversation loaded, no new prompt), task back to `running` and re-correlates; `ccmux task resume <id> --prompt "continue: …"` submits the follow-up after ready; `ccmux task list --stopped` shows only stopped tasks
+- [x] 6.3 Live smoke (real claude): create+run a task, close its pane → `stopped`; `ccmux task resume <id>` → claude relaunches with `--resume <nativeSessionId>` in a new pane (prior conversation loaded, no new prompt), task back to `running` and re-correlates; `ccmux task resume <id> --prompt "continue: …"` submits the follow-up after ready; `ccmux task list --stopped` shows only stopped tasks
 - [x] 6.4 Confirm no renderer/TUI-board code added

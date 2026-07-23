@@ -126,13 +126,44 @@ A task MAY carry a raw `command` argv that the launcher runs verbatim, bypassing
 - **WHEN** `ccmux task create -d . <agent> -- <raw args>` is invoked
 - **THEN** the created task carries the raw args as its `command`
 
+### Requirement: Resume a stopped task
+
+The daemon SHALL resume a `stopped` task via `POST /tasks/{id}/resume`, relaunching the agent against its retained conversation into a fresh `new-window` pane and setting status back to `running`. It SHALL build the agent's resume command — claude uses `<binary> --resume <nativeSessionId>`; any agent with a `resumeCommand` uses that template with `{id}` replaced by `nativeSessionId`. The request MAY include an optional follow-up prompt: when present, the daemon SHALL submit it once the resumed agent is ready (the same ready-then-send used for a fresh run); when absent, no prompt is submitted and the conversation is simply re-attached. The resulting session SHALL re-correlate onto the task (new `paneId`/`sessionId`, `nativeSessionId` preserved).
+
+Resume SHALL be gated: the task MUST exist (else `404`), MUST be `stopped`, MUST have a `nativeSessionId`, and its agent MUST be resumable (claude, or an agent with a `resumeCommand`). A failing precondition SHALL yield `400` and launch nothing.
+
+#### Scenario: Resume a stopped task (re-attach only)
+
+- **WHEN** `POST /tasks/{id}/resume` is called with no follow-up prompt for a `stopped` task whose agent is resumable and which has a `nativeSessionId`
+- **THEN** the agent is relaunched with its resume command in a new pane, no prompt is submitted, the task re-correlates (new `paneId`/`sessionId`, same `nativeSessionId`), its status becomes `running`, and `task_updated` is broadcast
+
+#### Scenario: Resume with a follow-up prompt
+
+- **WHEN** `POST /tasks/{id}/resume` is called with a follow-up prompt
+- **THEN** after the resumed agent is ready the prompt is submitted into it, and the task returns to `running`
+
+#### Scenario: Resume rejects a non-stopped task
+
+- **WHEN** `POST /tasks/{id}/resume` is called for a task that is not `stopped`
+- **THEN** the response is `400` and nothing is launched
+
+#### Scenario: Resume rejects a non-resumable agent
+
+- **WHEN** a `stopped` task's agent has no `resumeCommand` and is not claude
+- **THEN** the response is `400` with a clear error and nothing is launched
+
+#### Scenario: Resume a missing task
+
+- **WHEN** `POST /tasks/{id}/resume` is called for an unknown id
+- **THEN** the response is `404`
+
 ### Requirement: Task CLI
 
-The tool SHALL provide a `ccmux task` command group to drive tasks against the daemon: `list`, `create` (with an optional flag to run immediately), `run <ref>`, and `rm <ref>`. Each subcommand SHALL ensure the daemon is running and communicate over the existing `/tasks` HTTP endpoints, mirroring `ccmux spawn`/`invoke`.
+The tool SHALL provide a `ccmux task` command group to drive tasks against the daemon: `list`, `create` (with an optional flag to run immediately), `run <ref>`, `resume <ref>`, and `rm <ref>`. Each subcommand SHALL ensure the daemon is running and communicate over the existing `/tasks` HTTP endpoints, mirroring `ccmux spawn`/`invoke`.
 
 `create` SHALL default the working directory to the current directory, overridable with `-d/--dir`, and SHALL fail before contacting the daemon when the resolved directory does not exist. It SHALL NOT force default values for `agent` or `target`: an unset flag is sent as absent so the daemon's default cascade (config `defaults` → per-project → template → input, then built-in `target`) applies.
 
-`run` and `rm` SHALL accept a task reference that is either a full id or a unique id prefix, resolving the prefix CLI-side against the task list: a prefix matching exactly one task resolves to its full id; an ambiguous prefix SHALL error and list the candidates; no match SHALL error. The daemon endpoints continue to take full ids.
+`run`, `resume`, and `rm` SHALL accept a task reference that is either a full id or a unique id prefix, resolving the prefix CLI-side against the task list: a prefix matching exactly one task resolves to its full id; an ambiguous prefix SHALL error and list the candidates; no match SHALL error. The daemon endpoints continue to take full ids. `resume` calls `POST /tasks/{id}/resume` and SHALL accept an optional `--prompt <text>` follow-up passed in the request body. `list` SHALL accept a `--stopped` flag that filters output to resumable (`stopped`) tasks.
 
 #### Scenario: Create defaults the dir to PWD
 
@@ -163,6 +194,21 @@ The tool SHALL provide a `ccmux task` command group to drive tasks against the d
 
 - **WHEN** `ccmux task run <prefix>` is invoked and exactly one task's id starts with `<prefix>`
 - **THEN** that task is run
+
+#### Scenario: Resume by the CLI
+
+- **WHEN** `ccmux task resume <ref>` is invoked for a `stopped` task
+- **THEN** the CLI resolves the ref and calls the daemon's resume endpoint
+
+#### Scenario: Resume with a follow-up prompt from the CLI
+
+- **WHEN** `ccmux task resume <ref> --prompt <text>` is invoked
+- **THEN** the follow-up prompt is sent in the resume request body
+
+#### Scenario: List only stopped tasks
+
+- **WHEN** `ccmux task list --stopped` is invoked
+- **THEN** only tasks with status `stopped` are printed
 
 #### Scenario: Ambiguous prefix errors
 
