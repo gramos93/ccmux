@@ -103,7 +103,7 @@ Each task row SHALL indicate its execution kind — background (headless invoke)
 
 ### Requirement: Task creation from the board
 
-The task board SHALL provide a create action, opened by a keybind, that presents a single modal form for composing a new task and dispatches it to the existing `POST /tasks` endpoint. The form SHALL offer: agent, project, target, target-ref, template, prompt, and a run-now toggle. The `target` field SHALL be a single mutually-exclusive selector cycling every placement — `new-window`, `split`, `send-to-existing`, and the headless `background` — so a task has exactly one placement and background is not a separate co-selectable toggle. Field choices SHALL be sourced from local configuration — agents from the built-in registry plus config `agents`, templates from config `templates`, projects from config `projects` combined with the working directories of live sessions, the projects of existing tasks, and the immediate subdirectories of the configured project root(s) (`projectsRoot`, a one-level scan) — and the form's initial values SHALL be pre-filled from the same default cascade the daemon resolves (`defaults → projects[project] → templates[template]`). The project field SHALL additionally offer a searchable picker (filter-as-you-type over the known projects) with an escape hatch to enter an arbitrary path not yet known. The target-ref field SHALL be offered only for `split` and `send-to-existing` targets, and SHALL pick from the live sessions belonging to the selected project (the value sent being the session's tmux pane); changing the project SHALL drop a target-ref that no longer belongs to it. On submit the TUI SHALL POST the entered fields to the daemon (omitting unset fields so the daemon's resolver still applies) and, when run-now is set, SHALL additionally run the created task. The form SHALL NOT be submittable without a prompt unless a selected template supplies one, nor when a `split`/`send-to-existing` target has no resolved pane. Creation SHALL NOT optimistically mutate the store; the `task_created` (and, for run-now, `task_updated`) broadcast SHALL add and update the row. The create action SHALL leave the daemon's task endpoints unchanged (no new endpoint).
+The task board SHALL provide a create action, opened by a keybind, that presents a single modal form for composing a new task and dispatches it to the existing `POST /tasks` endpoint. The form SHALL offer: agent, project, target, target-ref, template, prompt, and a run-now toggle. The `target` field SHALL be a single mutually-exclusive selector cycling every placement — `new-window`, `split`, `send-to-existing`, the headless `background`, and `new-session` — so a task has exactly one placement and background is not a separate co-selectable toggle. Field choices SHALL be sourced from local configuration — agents from the built-in registry plus config `agents`, templates from config `templates`, projects from config `projects` combined with the working directories of live sessions, the projects of existing tasks, and the immediate subdirectories of the configured project root(s) (`projectsRoot`, a one-level scan) — and the form's initial values SHALL be pre-filled from the same default cascade the daemon resolves (`defaults → projects[project] → templates[template]`). The project field SHALL additionally offer a searchable picker (filter-as-you-type over the known projects) with an escape hatch to enter an arbitrary path not yet known. The target-ref field SHALL be offered only for `split` and `send-to-existing` targets, and SHALL pick from the live sessions belonging to the selected project (the value sent being the session's tmux pane); changing the project SHALL drop a target-ref that no longer belongs to it. `new-window`, `background`, and `new-session` do not use a target-ref. On submit the TUI SHALL POST the entered fields to the daemon (omitting unset fields so the daemon's resolver still applies) and, when run-now is set, SHALL additionally run the created task. The form SHALL NOT be submittable without a prompt unless a selected template supplies one, nor when a `split`/`send-to-existing` target has no resolved pane. Creation SHALL NOT optimistically mutate the store; the `task_created` (and, for run-now, `task_updated`) broadcast SHALL add and update the row. The create action SHALL leave the daemon's task endpoints unchanged (no new endpoint).
 
 #### Scenario: Open the create form
 
@@ -120,15 +120,20 @@ The task board SHALL provide a create action, opened by a keybind, that presents
 - **WHEN** the user submits with the run-now toggle set
 - **THEN** the TUI creates the task and then runs it, and the row appears and updates to `running` as the broadcasts arrive
 
-#### Scenario: Background is a target value, not a co-selectable toggle
+#### Scenario: Background and new-session are target values, not co-selectable toggles
 
 - **WHEN** the user cycles the target field
-- **THEN** it moves through `new-window`, `split`, `send-to-existing`, and `background` as mutually-exclusive values, with no separate background checkbox that could be set alongside a pane target
+- **THEN** it moves through `new-window`, `split`, `send-to-existing`, `background`, and `new-session` as mutually-exclusive values, with no separate background checkbox that could be set alongside a pane target
 
 #### Scenario: target-ref is offered only for split/send-to-existing and filtered to the project
 
 - **WHEN** the selected target is `split` or `send-to-existing`
-- **THEN** the form shows a target-ref picker over the live sessions **in the selected project**; for `new-window` or `background` the target-ref field is hidden
+- **THEN** the form shows a target-ref picker over the live sessions **in the selected project**; for `new-window`, `background`, or `new-session` the target-ref field is hidden
+
+#### Scenario: new-session is submittable without a pane
+
+- **WHEN** the selected target is `new-session` and a prompt (or prompt-bearing template) is set
+- **THEN** the form is submittable without any target-ref
 
 #### Scenario: Changing the project drops a mismatched pane
 

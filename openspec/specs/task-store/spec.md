@@ -10,9 +10,9 @@ The `Task` primitive and its persistence: a single `Task` schema with two lifecy
 
 The system SHALL define a `Task` type with a single schema serving two lifecycles: a persistent **template** and an ephemeral **instance**. A `Task` MUST carry the fields `project`, `target`, `agent`, `prompt`, and `status`, and MAY carry `worktree`, `targetRef`, and `command`. A slash-command, when present, SHALL be part of the `prompt` string, not a separate field. Instances additionally carry a unique `id`, creation/update timestamps, and MAY carry the correlation link fields `paneId` (the tmux pane the task was launched into), `sessionId` (the ccmux session correlated to it), and `nativeSessionId` (the agent's own conversation id, the durable anchor used to resume). `paneId`/`sessionId` are per-launch and replaced on each (re)launch; `nativeSessionId` persists across launches. The link fields are absent at creation and set post-launch/post-correlation.
 
-The `target` field SHALL be one of `new-window`, `split`, `send-to-existing`, or `background`. `background` denotes a headless run (no pane) executed via the invoke subsystem. The value `new-session` is reserved and MUST NOT be accepted.
+The `target` field SHALL be one of `new-window`, `split`, `send-to-existing`, `background`, or `new-session`. `background` denotes a headless run (no pane) executed via the invoke subsystem. `new-session` denotes a launch into a dedicated tmux session named after the project (behavior defined by the task-launch capability). No target value is reserved.
 
-The optional `targetRef` field SHALL identify the tmux pane or session that a `split` or `send-to-existing` target acts on. The data model persists the field; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it.
+The optional `targetRef` field SHALL identify the tmux pane or session that a `split` or `send-to-existing` target acts on. The data model persists the field; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it. `new-window` and `new-session` do not use it.
 
 The optional `command` field SHALL be a raw argv (`string[]`) that, when present, is launched verbatim instead of a command built from the agent adapter. It is the passthrough escape hatch; the data model only persists it. When `command` is present, `prompt` is NOT required (the command is self-contained).
 
@@ -27,10 +27,10 @@ The `status` field of an instance SHALL be one of `pending`, `running`, `stopped
 - **WHEN** a task instance is created with `project`, `target: "new-window"`, `agent`, `prompt`, and `status: "pending"`
 - **THEN** the store persists it and assigns a unique `id` and creation timestamp
 
-#### Scenario: Reserved target rejected
+#### Scenario: new-session target accepted
 
 - **WHEN** a task is created with `target: "new-session"`
-- **THEN** creation is rejected with an error and nothing is persisted
+- **THEN** the store persists it (no target value is reserved)
 
 #### Scenario: Worktree names a branch
 
