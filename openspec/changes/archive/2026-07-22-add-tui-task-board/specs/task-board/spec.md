@@ -45,22 +45,27 @@ The TUI SHALL provide a task board view, toggled from the session view by a keyb
 
 ### Requirement: Task board row actions
 
-From the task board the user SHALL be able to resume a `stopped` task and delete any task, each dispatched to the existing daemon endpoints. The board SHALL NOT optimistically mutate the store; the resulting `task_updated`/`task_removed` broadcast updates the row.
+From the task board the user SHALL be able to activate a row, explicitly resume a `stopped` task, and delete any task, each dispatched to the existing daemon endpoints. Activating (enter) a `stopped` task SHALL resume it; activating a `running` task linked to a session SHALL jump to that session's pane (mirroring the session view's activate). An explicit resume action SHALL apply only to `stopped` tasks. The board SHALL NOT optimistically mutate the store; the resulting `task_updated`/`task_removed` broadcast updates the row.
 
 #### Scenario: Resume a stopped task from the board
 
-- **WHEN** the user triggers resume on a `stopped` row
+- **WHEN** the user resumes (or activates) a `stopped` row
 - **THEN** the TUI POSTs to the task's resume endpoint, and the row updates to `running` when the broadcast arrives
+
+#### Scenario: Activate a running task jumps to its session
+
+- **WHEN** the user activates (enter) a `running` row linked to a session
+- **THEN** the TUI jumps to that session's tmux pane
 
 #### Scenario: Delete a task from the board
 
 - **WHEN** the user triggers delete on a row
 - **THEN** the TUI deletes the task via the daemon, and the row disappears when the broadcast arrives
 
-#### Scenario: Resume is offered only for stopped tasks
+#### Scenario: Explicit resume is offered only for stopped tasks
 
 - **WHEN** the selected row is not `stopped`
-- **THEN** the resume action does nothing (or is not offered)
+- **THEN** the explicit resume action does nothing
 
 ### Requirement: Task board grouping
 
