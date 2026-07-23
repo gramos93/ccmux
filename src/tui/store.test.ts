@@ -2702,9 +2702,9 @@ describe("store", () => {
       expect(store.state.createForm.agent).toBe("claude");
       store.actions.cycleCreateField("template", 1);
       expect(store.state.createForm.template).toBe("review");
-      // target cycles new-window → split → send-to-existing → background
+      // target cycles new-window → … → new-session (last); -1 wraps to it
       store.actions.cycleCreateField("target", -1);
-      expect(store.state.createForm.target).toBe("background");
+      expect(store.state.createForm.target).toBe("new-session");
       // prompt is not cyclable
       store.actions.cycleCreateField("prompt", 1);
       expect(store.state.createForm.prompt).toBe("");
@@ -2735,6 +2735,9 @@ describe("store", () => {
       store.actions.setCreateField("target", "split");
       expect(store.createFormValid()).toBe(false);
       store.actions.setCreateField("targetRef", "%1");
+      expect(store.createFormValid()).toBe(true);
+      // new-session needs no pane: valid with just a prompt.
+      store.actions.setCreateField("target", "new-session");
       expect(store.createFormValid()).toBe(true);
     });
 

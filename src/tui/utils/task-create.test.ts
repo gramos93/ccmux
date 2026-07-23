@@ -106,6 +106,14 @@ describe("buildCreateBody", () => {
     expect("targetRef" in body).toBe(false);
   });
 
+  it("passes a new-session target without a target-ref", () => {
+    const body = buildCreateBody(
+      form({ target: "new-session", targetRef: "%1", prompt: "x" }),
+    );
+    expect(body.target).toBe("new-session");
+    expect("targetRef" in body).toBe(false);
+  });
+
   it("includes target-ref only for split/send-to-existing", () => {
     expect(
       buildCreateBody(form({ target: "split", targetRef: "%1", prompt: "x" }))
@@ -165,10 +173,13 @@ describe("visibleCreateFieldsFor", () => {
       visibleCreateFieldsFor(form({ target: "send-to-existing" })),
     ).toContain("targetRef");
   });
-  it("hides target-ref for a background target", () => {
+  it("hides target-ref for background and new-session targets", () => {
     expect(visibleCreateFieldsFor(form({ target: "background" }))).not.toContain(
       "targetRef",
     );
+    expect(
+      visibleCreateFieldsFor(form({ target: "new-session" })),
+    ).not.toContain("targetRef");
   });
 });
 
@@ -194,12 +205,13 @@ describe("session/project filtering", () => {
 });
 
 describe("cycleOptionsFor", () => {
-  it("cycles target through all four placements incl. background", () => {
+  it("cycles target through every placement incl. background and new-session", () => {
     expect(cycleOptionsFor("target", OPTIONS)).toEqual([
       "new-window",
       "split",
       "send-to-existing",
       "background",
+      "new-session",
     ]);
   });
   it("prepends an empty (none) choice for template", () => {

@@ -13,12 +13,14 @@
  */
 
 /** Where a launched task's agent runs. `background` runs headlessly via the
- *  invoke subsystem (no pane). `new-session` is reserved and NOT accepted. */
+ *  invoke subsystem (no pane). `new-session` launches into a dedicated tmux
+ *  session named after the project (see task-launch). */
 export type TaskTarget =
   | "new-window"
   | "split"
   | "send-to-existing"
-  | "background";
+  | "background"
+  | "new-session";
 
 /** Lifecycle status of a task instance. `stopped` = an interactive task whose
  *  agent/pane closed but whose `nativeSessionId` is retained (resumable). */
@@ -34,6 +36,7 @@ export const VALID_TASK_TARGETS: TaskTarget[] = [
   "split",
   "send-to-existing",
   "background",
+  "new-session",
 ];
 
 export const VALID_TASK_STATUSES: TaskStatus[] = [
@@ -113,10 +116,9 @@ export interface TaskInstance extends TaskSpec {
 
 /**
  * Validate a resolved spec at creation time and narrow it to a full
- * {@link TaskSpec}. Rejects the reserved `new-session` target, any unknown
- * target, and missing required fields. Validation is deliberately minimal
- * (consistent with ccmux treating config as loosely validated); it does not
- * police `targetRef`/`worktree` shapes.
+ * {@link TaskSpec}. Rejects any unknown target and missing required fields.
+ * Validation is deliberately minimal (consistent with ccmux treating config
+ * as loosely validated); it does not police `targetRef`/`worktree` shapes.
  *
  * @throws Error when the spec is not a valid new task.
  */
@@ -125,11 +127,6 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
 
   if (target === undefined) {
     throw new Error("Task target is required");
-  }
-  if ((target as string) === "new-session") {
-    throw new Error(
-      "Task target 'new-session' is reserved and not yet supported",
-    );
   }
   if (!VALID_TASK_TARGETS.includes(target)) {
     throw new Error(`Unknown task target: ${String(target)}`);

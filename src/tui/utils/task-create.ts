@@ -17,6 +17,7 @@ export const TARGET_CYCLE: TaskTarget[] = [
   "split",
   "send-to-existing",
   "background",
+  "new-session",
 ];
 
 /** Whether a target needs a pane reference (the `Pane` field / target-ref). */

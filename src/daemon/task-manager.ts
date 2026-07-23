@@ -105,7 +105,7 @@ export class TaskManager extends EventEmitter {
    * override → named template → request input) from the daemon's loaded
    * preferences, persist the validated task, and emit `created`.
    *
-   * @throws Error from `validateNewTask` (e.g. reserved `new-session` target).
+   * @throws Error from `validateNewTask` (e.g. an unknown target).
    */
   async create(body: CreateTaskBody): Promise<TaskInstance> {
     const { project, template, ...input } = body;

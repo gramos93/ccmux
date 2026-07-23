@@ -82,10 +82,9 @@ describe("task-store CRUD", () => {
     await deleteTask(created.id);
   });
 
-  it("rejects the reserved new-session target", async () => {
-    await expect(
-      createTask({ ...spec, target: "new-session" as never }),
-    ).rejects.toThrow(/new-session/);
+  it("accepts the new-session target", async () => {
+    const task = await createTask({ ...spec, target: "new-session" });
+    expect(task.target).toBe("new-session");
   });
 });
 

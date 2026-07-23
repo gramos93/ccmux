@@ -104,7 +104,7 @@ export function createTaskCommand(): Command {
     .option("--template <name>", "Named template to apply")
     .option(
       "--target <target>",
-      "new-window | split | send-to-existing | background",
+      "new-window | split | send-to-existing | background | new-session",
     )
     .option("--target-ref <pane>", "Pane/session for split/send-to-existing")
     .option("--bg", "Run headless via the invoke subsystem (target=background)")

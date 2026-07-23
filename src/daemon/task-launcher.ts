@@ -17,6 +17,7 @@
  * See `openspec/changes/add-agent-adaptive-launch`.
  */
 import { existsSync, statSync } from "fs";
+import { basename } from "path";
 import { stripAnsi } from "../lib/strip-ansi";
 import { getAgentExecutable, type AgentDef } from "../lib/agents";
 import type { Preferences } from "../lib/preferences";
@@ -74,6 +75,17 @@ function shellQuote(token: string): string {
   return `'${token.replace(/'/g, "'\\''")}'`;
 }
 
+/**
+ * Derive a tmux session name for a `new-session` task from its project. Uses
+ * the path basename, replacing the characters tmux forbids in session names
+ * (`.` and `:`) with `-`, and falling back to `task` for an empty result.
+ */
+export function tmuxSessionName(project: string): string {
+  const base = basename(project) || project;
+  const sanitized = base.replace(/[.:]/g, "-").trim();
+  return sanitized.length > 0 ? sanitized : "task";
+}
+
 /** Whether an agent can be resumed (claude, or one with a `resumeCommand`). */
 export function isAgentResumable(agent: AgentDef | undefined): boolean {
   return !!agent && (agent.name === "claude" || !!agent.resumeCommand);
@@ -124,19 +136,22 @@ async function capture(deps: TaskLauncherDeps, paneId: string): Promise<string> 
 }
 
 /** Options for {@link launchTask}. `resume` launches the agent's resume
- *  command into a fresh window; `prompt` (when set) is submitted after the
- *  agent is ready (a follow-up turn). */
+ *  command (into the task's project session for a `new-session` task, else a
+ *  fresh new-window); `prompt` (when set) is submitted after the agent is
+ *  ready (a follow-up turn). */
 export interface LaunchOpts {
   resume?: boolean;
   prompt?: string;
 }
 
 /**
- * Launch a task into a pane. Without `opts`, launches per the task's target.
- * With `opts.resume`, always opens a fresh `new-window`, launches the agent's
- * resume command, and submits `opts.prompt` only if one was given. Throws on
- * an unsupported target, a missing working directory, a missing `targetRef`
- * for `send-to-existing`, or a tmux failure.
+ * Launch a task into a pane. Without `opts`, launches per the task's target
+ * (`new-window`/`split`, a project-named `new-session` created-or-attached, or
+ * `send-to-existing`). With `opts.resume`, launches the agent's resume command
+ * — into the project session for a `new-session` task, else a fresh
+ * `new-window` — and submits `opts.prompt` only if one was given. Throws on an
+ * unsupported target, a missing working directory, a missing `targetRef` for
+ * `send-to-existing`, or a tmux failure.
  */
 export async function launchTask(
   task: TaskInstance,
@@ -149,10 +164,35 @@ export async function launchTask(
   const sendLiteral = deps.sendLiteral ?? sendLiteralToPane;
   const sendPrompt = deps.sendPrompt ?? sendPromptToPane;
 
-  // Shared: create a pane, send the launch command, and — when a prompt is
-  // given — ready-wait then submit it (bracketed paste + delayed Enter).
+  // Static create argv for the current-session pane targets (new-window/split).
+  const paneCreateArgv = (tmuxCmd: "new-window" | "split-window"): string[] => [
+    tmuxCmd,
+    "-c",
+    task.project,
+    "-P",
+    "-F",
+    "#{pane_id}",
+  ];
+
+  // Create argv for `new-session`: a detached, project-named session when none
+  // exists, else a new window inside the existing same-named session (attach on
+  // collision — one session per project). Exact-match `=name` so a prefix can't
+  // false-hit. Shared by both the fresh run and the resume path.
+  const newSessionCreateArgv = async (): Promise<string[]> => {
+    const name = tmuxSessionName(task.project);
+    const exists =
+      (await deps.runTmux(["has-session", "-t", `=${name}`])).code === 0;
+    const head = exists
+      ? ["new-window", "-t", name]
+      : ["new-session", "-d", "-s", name];
+    return [...head, "-c", task.project, "-P", "-F", "#{pane_id}"];
+  };
+
+  // Shared: create a pane from the given tmux create argv, send the launch
+  // command, and — when a prompt is given — ready-wait then submit it
+  // (bracketed paste + delayed Enter).
   const runInPane = async (
-    tmuxCmd: "new-window" | "split-window",
+    createArgv: string[],
     launchCommand: string,
     promptToSend: string | undefined,
   ): Promise<LaunchResult> => {
@@ -161,16 +201,9 @@ export async function launchTask(
     if (!existsSync(task.project) || !statSync(task.project).isDirectory()) {
       throw new Error(`Working directory does not exist: ${task.project}`);
     }
-    const create = await deps.runTmux([
-      tmuxCmd,
-      "-c",
-      task.project,
-      "-P",
-      "-F",
-      "#{pane_id}",
-    ]);
+    const create = await deps.runTmux(createArgv);
     if (create.code !== 0) {
-      throw new Error(`tmux ${tmuxCmd} failed: ${create.stderr.trim()}`);
+      throw new Error(`tmux ${createArgv[0]} failed: ${create.stderr.trim()}`);
     }
     const paneId = create.stdout.trim();
 
@@ -202,10 +235,16 @@ export async function launchTask(
     return { paneId };
   };
 
-  // Resume: fresh window, resume command, optional follow-up prompt.
+  // Resume: resume command + optional follow-up prompt. A new-session task
+  // resumes back into its project session (create-or-attach); every other
+  // target resumes into a fresh new-window.
   if (opts.resume) {
+    const createArgv =
+      task.target === "new-session"
+        ? await newSessionCreateArgv()
+        : paneCreateArgv("new-window");
     return runInPane(
-      "new-window",
+      createArgv,
       buildLaunchCommand(task, deps, { resume: true }),
       opts.prompt,
     );
@@ -216,7 +255,18 @@ export async function launchTask(
     // Passthrough: the raw command is the whole launch; no separate prompt.
     const promptToSend =
       task.command && task.command.length > 0 ? undefined : task.prompt;
-    return runInPane(tmuxCmd, buildLaunchCommand(task, deps), promptToSend);
+    return runInPane(paneCreateArgv(tmuxCmd), buildLaunchCommand(task, deps), promptToSend);
+  }
+
+  if (task.target === "new-session") {
+    // Passthrough: the raw command is the whole launch; no separate prompt.
+    const promptToSend =
+      task.command && task.command.length > 0 ? undefined : task.prompt;
+    return runInPane(
+      await newSessionCreateArgv(),
+      buildLaunchCommand(task, deps),
+      promptToSend,
+    );
   }
 
   if (task.target === "send-to-existing") {
