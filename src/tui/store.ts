@@ -871,13 +871,17 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       }
     },
 
-    /** Move task-board selection by delta over the current task list. */
+    /** Move task-board selection by delta over the current task list. With no
+     *  current selection, any move lands on the first task. */
     moveTaskSelection(delta: number) {
       const tasks = state.tasks;
       if (tasks.length === 0) return;
       const cur = tasks.findIndex((t) => t.id === state.selectedTaskId);
-      const base = cur === -1 ? 0 : cur;
-      const nextIdx = Math.max(0, Math.min(tasks.length - 1, base + delta));
+      if (cur === -1) {
+        setState("selectedTaskId", tasks[0].id);
+        return;
+      }
+      const nextIdx = Math.max(0, Math.min(tasks.length - 1, cur + delta));
       setState("selectedTaskId", tasks[nextIdx].id);
     },
 

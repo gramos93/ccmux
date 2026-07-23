@@ -26,10 +26,10 @@
 
 ## 5. Tests
 
-- [ ] 5.1 Store: task actions (add/update-by-id/remove) + `reconcileTasks` replace; add a `mockTask` helper to `test-helpers.tsx`
-- [ ] 5.2 `sse.ts`: `dispatchSSEEvent` `init` forwards `tasks` to `onInit` (extend the existing dispatch test)
-- [ ] 5.3 `TaskRow` (`testRender`): renders id/status/agent/project; a running task with a joined session shows live activity; a stopped task shows a resumable indicator
-- [ ] 5.4 `TaskBoard` (`testRender`): renders rows from store tasks; empty state when none
+- [x] 5.1 Store: task actions (add/update-by-id/remove) + `reconcileTasks` replace; add a `mockTask` helper to `test-helpers.tsx`
+- [x] 5.2 `sse.ts`: `dispatchSSEEvent` `init` forwards `tasks` to `onInit` (extend the existing dispatch test)
+- [x] 5.3 `TaskRow` (`testRender`): renders id/status/agent/project; a running task with a joined session shows live activity; a stopped task shows a resumable indicator
+- [x] 5.4 `TaskBoard` (`testRender`): renders rows from store tasks; empty state when none
 
 ## 6. Verification
 

@@ -37,6 +37,37 @@ describe("dispatchSSEEvent init handling", () => {
     expect(received).toEqual([{ invocationId: "inv_a", status: "running" }]);
   });
 
+  it("threads init.tasks through to onInit", () => {
+    let received: unknown;
+    dispatchSSEEvent(
+      {
+        type: "init",
+        timestamp: "2024-01-15T12:00:00Z",
+        sessions: [],
+        activePaneId: null,
+        invocations: [],
+        tasks: [{ id: "t1", status: "stopped" } as never],
+      },
+      makeCallbacks({ onInit: (_s, _p, _inv, tasks) => (received = tasks) }),
+    );
+    expect(received).toEqual([{ id: "t1", status: "stopped" }]);
+  });
+
+  it("passes [] tasks to onInit when the init frame omits them", () => {
+    let received: unknown = "unset";
+    dispatchSSEEvent(
+      {
+        type: "init",
+        timestamp: "2024-01-15T12:00:00Z",
+        sessions: [],
+        activePaneId: null,
+        invocations: [],
+      },
+      makeCallbacks({ onInit: (_s, _p, _inv, tasks) => (received = tasks) }),
+    );
+    expect(received).toEqual([]);
+  });
+
   it("passes [] to onInit when an init frame omits invocations (older daemon)", () => {
     let called = false;
     let received: InvocationSnapshotEntry[] | undefined;

@@ -1,7 +1,22 @@
 import type { EnrichedSession, Session } from "../../types";
+import type { TaskInstance } from "../../lib/task";
 import type { FilteredSession, StatusSummary } from "../utils/grouping";
 
 const FIXED_DATE = "2024-01-15T12:00:00Z";
+
+export function mockTask(overrides: Partial<TaskInstance> = {}): TaskInstance {
+  return {
+    id: "task-abcdef12-full",
+    project: "/Users/test/Code/myapp",
+    target: "new-window",
+    agent: "claude",
+    prompt: "do the thing",
+    status: "pending",
+    createdAt: FIXED_DATE,
+    updatedAt: FIXED_DATE,
+    ...overrides,
+  };
+}
 
 export function mockEnrichedSession(
   overrides: Partial<EnrichedSession> = {},
