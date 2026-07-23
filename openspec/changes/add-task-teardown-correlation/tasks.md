@@ -25,7 +25,7 @@
 
 ## 5. Verification
 
-- [ ] 5.1 `bun run typecheck` passes
-- [ ] 5.2 `bun test` passes
+- [x] 5.1 `bun run typecheck` passes
+- [x] 5.2 `bun test` passes
 - [ ] 5.3 Live smoke (isolated daemon, real claude): create+run an interactive task; `ccmux task list` shows `running` with a `sessionId`, then `nativeSessionId` populates after the first turn; close the pane/agent → the task flips to `stopped` and retains `nativeSessionId`
-- [ ] 5.4 Confirm no renderer/resume/TUI-board code added (phase 1 is data + transition only)
+- [x] 5.4 Confirm no renderer/resume/TUI-board code added (phase 1 is data + transition only)
