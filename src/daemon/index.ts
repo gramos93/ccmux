@@ -80,6 +80,10 @@ import {
 import { AttentionTracker } from "./attention-tracker";
 import { redirectStdioToLogFile } from "./log-redirect";
 import { InvocationManager } from "./invocation-manager";
+import { TaskManager } from "./task-manager";
+import { launchTask, realTmuxRunner } from "./task-launcher";
+import { noInvokeModeMessage } from "./invokers/helpers";
+import type { InvokeInput } from "./invokers/types";
 import { Notifier, buildStateChangedPayload } from "./notifier";
 import { createNotifyDelivery } from "./notify-delivery";
 import { performJump, type JumpDeps } from "./notify-jump";
@@ -220,6 +224,7 @@ export class Daemon {
    * two-scan hysteresis state for `cleanupStaleSessions`. */
   private stalePending: ReadonlySet<string> = new Set();
   private invocationManager: InvocationManager;
+  private taskManager: TaskManager;
   /** Created in start() only when `backgroundAgents !== false`; null = the
    * feature is gated off (no watchers, no resync, zero overhead). */
   private backgroundSource: ClaudeBackgroundSource | null = null;
@@ -270,6 +275,39 @@ export class Daemon {
       this.sessionManager,
       invocationRegistry,
     );
+    this.taskManager = new TaskManager({
+      launch: async (task, opts) =>
+        launchTask(
+          task,
+          {
+            getAgentByType: (name) => this.agents.find((a) => a.name === name),
+            runTmux: realTmuxRunner,
+            prefs: await getPreferences(),
+          },
+          opts,
+        ),
+      // Background tasks route to the invoke subsystem. Throws for a
+      // non-invokable agent so the run route returns 400.
+      invoke: async (task) => {
+        const agent = this.agents.find((a) => a.name === task.agent);
+        if (!agent) throw new Error(`Unknown agent: ${task.agent}`);
+        if (!agent.invokeMode && agent.name !== "claude") {
+          throw new Error(noInvokeModeMessage(agent));
+        }
+        const prefs = await getPreferences();
+        const invocationId = "inv_" + crypto.randomUUID().replace(/-/g, "");
+        const input: InvokeInput = {
+          invocationId,
+          agent,
+          prompt: task.prompt,
+          cwd: task.project,
+          timeoutMs: 300_000,
+          ...(agent.name === "claude" ? { claudeBinary: prefs.command } : {}),
+        };
+        const result = this.invocationManager.invoke(input);
+        return { invocationId, result };
+      },
+    });
 
     // Resolve the daemon's own binaries once (mirroring how it resolves every
     // other tool — `Bun.which`), shared by the delivery layer and the jump
@@ -307,6 +345,7 @@ export class Daemon {
       (agentType) => this.agents.find((a) => a.name === agentType),
       this.attentionTracker,
       this.invocationManager,
+      this.taskManager,
       (agentName) => this.hookManager.getAdapter(agentName) ?? null,
       { sendLiteralToPane, sendPromptToPane },
       (input) => this.runNotificationAction(input),

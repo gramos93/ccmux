@@ -1,6 +1,7 @@
 import { describe, it, expect } from "bun:test";
 import { dispatchSSEEvent, type SSECallbacks } from "./sse";
 import type { InvocationSnapshotEntry, SSEEvent } from "../../types";
+import type { TaskInstance } from "../../lib/task";
 
 // Locks the client half of the invocation-snapshot wiring: `onInit` is the
 // only consumer of the optional `invocations` arg, so a dropped third arg or a
@@ -36,6 +37,37 @@ describe("dispatchSSEEvent init handling", () => {
     expect(received).toEqual([{ invocationId: "inv_a", status: "running" }]);
   });
 
+  it("threads init.tasks through to onInit", () => {
+    let received: unknown;
+    dispatchSSEEvent(
+      {
+        type: "init",
+        timestamp: "2024-01-15T12:00:00Z",
+        sessions: [],
+        activePaneId: null,
+        invocations: [],
+        tasks: [{ id: "t1", status: "stopped" } as never],
+      },
+      makeCallbacks({ onInit: (_s, _p, _inv, tasks) => (received = tasks) }),
+    );
+    expect(received).toEqual([{ id: "t1", status: "stopped" }]);
+  });
+
+  it("passes [] tasks to onInit when the init frame omits them", () => {
+    let received: unknown = "unset";
+    dispatchSSEEvent(
+      {
+        type: "init",
+        timestamp: "2024-01-15T12:00:00Z",
+        sessions: [],
+        activePaneId: null,
+        invocations: [],
+      },
+      makeCallbacks({ onInit: (_s, _p, _inv, tasks) => (received = tasks) }),
+    );
+    expect(received).toEqual([]);
+  });
+
   it("passes [] to onInit when an init frame omits invocations (older daemon)", () => {
     let called = false;
     let received: InvocationSnapshotEntry[] | undefined;
@@ -58,5 +90,53 @@ describe("dispatchSSEEvent init handling", () => {
     );
     expect(called).toBe(true);
     expect(received).toEqual([]);
+  });
+});
+
+describe("dispatchSSEEvent task events", () => {
+  const task: TaskInstance = {
+    id: "t1",
+    project: "p",
+    target: "new-window",
+    agent: "claude",
+    prompt: "hi",
+    status: "pending",
+    createdAt: "2024-01-15T12:00:00Z",
+    updatedAt: "2024-01-15T12:00:00Z",
+  };
+
+  it("routes task_created to onTaskCreated", () => {
+    let got: TaskInstance | undefined;
+    dispatchSSEEvent(
+      { type: "task_created", timestamp: "2024-01-15T12:00:00Z", task },
+      makeCallbacks({ onTaskCreated: (t) => (got = t) }),
+    );
+    expect(got?.id).toBe("t1");
+  });
+
+  it("routes task_updated to onTaskUpdated", () => {
+    let got: TaskInstance | undefined;
+    dispatchSSEEvent(
+      { type: "task_updated", timestamp: "2024-01-15T12:00:00Z", task },
+      makeCallbacks({ onTaskUpdated: (t) => (got = t) }),
+    );
+    expect(got?.id).toBe("t1");
+  });
+
+  it("routes task_removed to onTaskRemoved", () => {
+    let got: string | undefined;
+    dispatchSSEEvent(
+      { type: "task_removed", timestamp: "2024-01-15T12:00:00Z", id: "t1" },
+      makeCallbacks({ onTaskRemoved: (id) => (got = id) }),
+    );
+    expect(got).toBe("t1");
+  });
+
+  it("ignores an unknown event type without throwing", () => {
+    const unknown = {
+      type: "not_a_real_event",
+      timestamp: "2024-01-15T12:00:00Z",
+    } as unknown as SSEEvent;
+    expect(() => dispatchSSEEvent(unknown, makeCallbacks())).not.toThrow();
   });
 });

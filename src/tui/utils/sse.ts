@@ -6,6 +6,7 @@ import type {
   InvocationFinishedEvent,
   InvocationSnapshotEntry,
 } from "../../types";
+import type { TaskInstance } from "../../lib/task";
 
 /**
  * Connection state for the SSE client
@@ -23,6 +24,8 @@ export interface SSECallbacks {
     // in `init`, see handleEvent's `?? []`); a snapshot-less connect (an older
     // daemon, or a test simulating the client) simply skips reconciliation.
     invocations?: InvocationSnapshotEntry[],
+    // Task snapshot for the board; older daemons omit it (treated as empty).
+    tasks?: TaskInstance[],
   ) => void;
   onSessionCreated: (session: EnrichedSession) => void;
   onSessionUpdated: (session: EnrichedSession) => void;
@@ -35,6 +38,9 @@ export interface SSECallbacks {
   ) => void;
   onInvocationStarted?: (event: InvocationStartedEvent) => void;
   onInvocationFinished?: (event: InvocationFinishedEvent) => void;
+  onTaskCreated?: (task: TaskInstance) => void;
+  onTaskUpdated?: (task: TaskInstance) => void;
+  onTaskRemoved?: (id: string) => void;
   onConnectionStateChange: (state: ConnectionState) => void;
   onError: (error: string) => void;
 }
@@ -58,6 +64,7 @@ export function dispatchSSEEvent(
         event.sessions,
         event.activePaneId,
         event.invocations ?? [],
+        event.tasks ?? [],
       );
       break;
     case "session_created":
@@ -84,6 +91,15 @@ export function dispatchSSEEvent(
       break;
     case "invocation_finished":
       callbacks.onInvocationFinished?.(event);
+      break;
+    case "task_created":
+      callbacks.onTaskCreated?.(event.task);
+      break;
+    case "task_updated":
+      callbacks.onTaskUpdated?.(event.task);
+      break;
+    case "task_removed":
+      callbacks.onTaskRemoved?.(event.id);
       break;
   }
 }

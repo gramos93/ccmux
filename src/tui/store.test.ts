@@ -1,6 +1,6 @@
 import { describe, it, expect, mock } from "bun:test";
 import type { FlatItem } from "./utils/grouping";
-import { mockEnrichedSession } from "./components/test-helpers";
+import { mockEnrichedSession, mockTask } from "./components/test-helpers";
 
 // capturePane is mocked (process-wide, per Bun's mock.module) so the
 // searchPaneLines tests can assert what the store passes it, without
@@ -2568,6 +2568,90 @@ describe("store", () => {
       expect(store.isSidebarVersionNewer(0)).toBe(false);
       expect(store.isSidebarVersionNewer(1)).toBe(false);
       expect(store.isSidebarVersionNewer(2)).toBe(true);
+    });
+  });
+
+  describe("task board slice", () => {
+    it("reconcileTasks replaces the list and clears a stale selection", () => {
+      const store = createTUIStore();
+      store.actions.reconcileTasks([
+        mockTask({ id: "a" }),
+        mockTask({ id: "b" }),
+      ]);
+      expect(store.state.tasks.map((t) => t.id)).toEqual(["a", "b"]);
+
+      store.actions.moveTaskSelection(1); // selects "a"
+      expect(store.state.selectedTaskId).toBe("a");
+      store.actions.reconcileTasks([mockTask({ id: "c" })]); // "a" gone
+      expect(store.state.tasks.map((t) => t.id)).toEqual(["c"]);
+      expect(store.state.selectedTaskId).toBeNull();
+    });
+
+    it("addTask appends; updateTask upserts by id; removeTask drops", () => {
+      const store = createTUIStore();
+      store.actions.addTask(mockTask({ id: "a", status: "pending" }));
+      store.actions.addTask(mockTask({ id: "b", status: "running" }));
+      expect(store.state.tasks).toHaveLength(2);
+
+      store.actions.updateTask(mockTask({ id: "a", status: "stopped" }));
+      expect(store.state.tasks.find((t) => t.id === "a")?.status).toBe(
+        "stopped",
+      );
+
+      // updateTask for an unseen id upserts.
+      store.actions.updateTask(mockTask({ id: "c", status: "done" }));
+      expect(store.state.tasks.map((t) => t.id)).toEqual(["a", "b", "c"]);
+
+      store.actions.removeTask("b");
+      expect(store.state.tasks.map((t) => t.id)).toEqual(["a", "c"]);
+    });
+
+    it("toggleView flips the view and auto-selects the first task", () => {
+      const store = createTUIStore();
+      store.actions.reconcileTasks([mockTask({ id: "a" }), mockTask({ id: "b" })]);
+      expect(store.state.view).toBe("sessions");
+      store.actions.toggleView();
+      expect(store.state.view).toBe("tasks");
+      expect(store.state.selectedTaskId).toBe("a"); // auto-selected first
+      store.actions.toggleView();
+      expect(store.state.view).toBe("sessions");
+    });
+
+    it("cycleTaskGroupBy cycles status → project → none → status", () => {
+      const store = createTUIStore();
+      expect(store.state.taskGroupBy).toBe("status");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("project");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("none");
+      store.actions.cycleTaskGroupBy();
+      expect(store.state.taskGroupBy).toBe("status");
+    });
+
+    it("moveTaskSelection walks task rows across status groups (skips headers)", () => {
+      const store = createTUIStore();
+      store.actions.reconcileTasks([
+        mockTask({ id: "r1", status: "running" }),
+        mockTask({ id: "s1", status: "stopped" }),
+      ]);
+      // Grouped by status → flat: [hdr running, r1, hdr stopped, s1].
+      store.actions.moveTaskSelection(1); // first move → first row
+      expect(store.state.selectedTaskId).toBe("r1");
+      store.actions.moveTaskSelection(1); // next task row, past the header
+      expect(store.state.selectedTaskId).toBe("s1");
+    });
+
+    it("moveTaskSelection clamps at the ends", () => {
+      const store = createTUIStore();
+      store.actions.reconcileTasks([mockTask({ id: "a" }), mockTask({ id: "b" })]);
+      store.actions.moveTaskSelection(-1); // no selection yet → first
+      expect(store.state.selectedTaskId).toBe("a");
+      store.actions.moveTaskSelection(-1); // clamp low
+      expect(store.state.selectedTaskId).toBe("a");
+      store.actions.moveTaskSelection(1);
+      expect(store.state.selectedTaskId).toBe("b");
+      store.actions.moveTaskSelection(5); // clamp high
+      expect(store.state.selectedTaskId).toBe("b");
     });
   });
 });

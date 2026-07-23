@@ -50,6 +50,7 @@ import {
 import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
+import { TaskList } from "./components/TaskList";
 import { SearchInput } from "./components/SearchInput";
 import { Preview } from "./components/Preview";
 import { Toast } from "./components/Toast";
@@ -530,6 +531,56 @@ export function App(props: AppProps) {
     fetch(`${getDaemonUrl()}${killActionPath(session)}`, { method: "POST" });
   }
 
+  /** Resume the selected stopped task (re-attach). Fire-and-forget; the
+   *  task_updated broadcast flips the row to running. No-op unless stopped. */
+  function resumeSelectedTask() {
+    const task = store.state.tasks.find(
+      (t) => t.id === store.state.selectedTaskId,
+    );
+    if (!task || task.status !== "stopped") return;
+    fetch(`${getDaemonUrl()}/tasks/${task.id}/resume`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    }).catch(() => {});
+  }
+
+  /** Delete the selected task. The task_removed broadcast drops the row. */
+  function deleteSelectedTask() {
+    const id = store.state.selectedTaskId;
+    if (!id) return;
+    fetch(`${getDaemonUrl()}/tasks/${id}`, { method: "DELETE" }).catch(() => {});
+  }
+
+  /** Enter on a task row: resume a stopped task, or jump to the live session
+   *  of a running/correlated one (mirrors `activateItem` for sessions). */
+  function activateSelectedTask() {
+    const task = store.state.tasks.find(
+      (t) => t.id === store.state.selectedTaskId,
+    );
+    if (!task) return;
+    if (task.status === "stopped") {
+      resumeSelectedTask();
+      return;
+    }
+    if (task.sessionId) {
+      const session = getSessionById(task.sessionId);
+      if (session?.tmuxPane) {
+        store.actions.setActiveSessionId(session.id);
+        selectPane(session.tmuxPane);
+      }
+    }
+  }
+
+  /** Quit the picker (or close the sidebar pane), matching the `q` case. */
+  function quitApp() {
+    if (props.sidebar) {
+      const selfPane = process.env.TMUX_PANE;
+      if (selfPane) Bun.spawn(["tmux", "kill-pane", "-t", selfPane]);
+    }
+    process.exit(0);
+  }
+
   function confirmDialogAction() {
     const action = store.state.confirmAction;
     const sessionId = store.state.confirmSessionId;
@@ -568,7 +619,7 @@ export function App(props: AppProps) {
 
   onMount(() => {
     sseClient = new SSEClient({
-      onInit: (sessions, activePaneId, invocations) => {
+      onInit: (sessions, activePaneId, invocations, tasks) => {
         markStartup("first_data");
         reportStartup();
         store.actions.setSessions(sessions);
@@ -588,6 +639,8 @@ export function App(props: AppProps) {
         // (not a separate fetch) so it lands strictly before any later
         // `invocation_started`, leaving no window to prune a fresh worker.
         store.actions.reconcileInvocations(invocations ?? []);
+        // Seed the task board from the same snapshot (phase 3).
+        store.actions.reconcileTasks(tasks ?? []);
       },
       onSessionCreated: (session) => {
         store.actions.addSession(session);
@@ -603,6 +656,15 @@ export function App(props: AppProps) {
       },
       onInvocationFinished: (event) => {
         store.actions.finishInvocation(event);
+      },
+      onTaskCreated: (task) => {
+        store.actions.addTask(task);
+      },
+      onTaskUpdated: (task) => {
+        store.actions.updateTask(task);
+      },
+      onTaskRemoved: (id) => {
+        store.actions.removeTask(id);
       },
       onConnectionStateChange: (state) => {
         batch(() => {
@@ -885,6 +947,36 @@ export function App(props: AppProps) {
           sendKeys(session.tmuxPane, event);
           setPreviewRefreshKey((k) => k + 1);
         }
+      }
+      event.preventDefault();
+      return;
+    }
+
+    // `t` toggles the task board from either view.
+    if (key === "t") {
+      store.actions.toggleView();
+      event.preventDefault();
+      return;
+    }
+
+    // Task board: its own key set, isolated from session nav.
+    if (store.state.view === "tasks") {
+      if (key === "escape") {
+        store.actions.toggleView();
+      } else if (key === "q") {
+        quitApp();
+      } else if (key === "j" || key === "down") {
+        store.actions.moveTaskSelection(1);
+      } else if (key === "k" || key === "up") {
+        store.actions.moveTaskSelection(-1);
+      } else if (key === "return" || key === "enter") {
+        activateSelectedTask();
+      } else if (key === "r") {
+        resumeSelectedTask();
+      } else if (key === "x") {
+        deleteSelectedTask();
+      } else if (key === "b") {
+        store.actions.cycleTaskGroupBy();
       }
       event.preventDefault();
       return;
@@ -1175,12 +1267,19 @@ export function App(props: AppProps) {
     >
       <box flexDirection="column" width="100%" height="100%">
         <Header
-          sessionCount={store.filteredSessions().length}
+          label={store.state.view === "tasks" ? "Tasks" : "Sessions"}
+          sessionCount={
+            store.state.view === "tasks"
+              ? store.state.tasks.length
+              : store.filteredSessions().length
+          }
           totalCount={
-            store.state.hideIdle ||
-            (store.state.searchMode && store.state.searchQuery)
-              ? store.sortedSessions().length
-              : undefined
+            store.state.view === "tasks"
+              ? undefined
+              : store.state.hideIdle ||
+                  (store.state.searchMode && store.state.searchQuery)
+                ? store.sortedSessions().length
+                : undefined
           }
           hideIdle={store.state.hideIdle}
           connectionState={store.state.connectionState}
@@ -1208,6 +1307,10 @@ export function App(props: AppProps) {
         </Show>
 
         <box flexDirection="row" flexGrow={1}>
+          <Show
+            when={store.state.view === "tasks"}
+            fallback={
+              <>
           <SessionList
             items={store.flatItems()}
             selectedIndex={store.selectedIndex()}
@@ -1253,6 +1356,17 @@ export function App(props: AppProps) {
               )}
             </Show>
           </Show>
+              </>
+            }
+          >
+            <TaskList
+              items={store.taskFlatItems()}
+              selectedIndex={store.selectedTaskFlatIndex()}
+              selectedTaskId={store.state.selectedTaskId}
+              getSessionById={getSessionById}
+              iconStyle={store.state.iconStyle}
+            />
+          </Show>
         </box>
 
         <Show when={!props.sidebar}>
@@ -1264,6 +1378,7 @@ export function App(props: AppProps) {
             persistent={props.persistent}
             groupBy={store.state.groupBy}
             reviewable={reviewEnabled}
+            taskView={store.state.view === "tasks"}
           />
         </Show>
 

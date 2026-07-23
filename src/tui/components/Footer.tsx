@@ -11,6 +11,7 @@ interface FooterProps {
   persistent?: boolean;
   groupBy?: GroupBy;
   reviewable?: boolean;
+  taskView?: boolean;
 }
 
 export const Footer: Component<FooterProps> = (props) => {
@@ -38,6 +39,12 @@ export const Footer: Component<FooterProps> = (props) => {
           <text fg={theme.overlay}>
             type to search · ^n/^p nav · enter{" "}
             {props.persistent ? "switch" : "select"} · esc cancel
+          </text>
+        </Match>
+        <Match when={props.taskView}>
+          <text fg={theme.overlay}>
+            j/k nav · enter open/resume · r resume · x delete · b group · t
+            sessions · q quit
           </text>
         </Match>
         <Match when={true}>

@@ -20,6 +20,14 @@ import type {
   InvocationSnapshotEntry,
 } from "../types";
 import type { ConnectionState } from "./utils/sse";
+import type { TaskInstance } from "../lib/task";
+import {
+  buildTaskFlatItems,
+  taskFlatIndex,
+  TASK_GROUP_BY_ORDER,
+  type TaskFlatItem,
+  type TaskGroupBy,
+} from "./utils/task-grouping";
 import type { IconStyle } from "../lib/icons";
 import type {
   ColumnsConfig,
@@ -81,6 +89,12 @@ interface TUIState {
   breakpoints?: BreakpointConfig;
   groupBy: GroupBy;
   hideIdle: boolean;
+  /** Task board state (phase 3). `view` toggles the middle region between the
+   *  session list and the task board. */
+  view: "sessions" | "tasks";
+  tasks: TaskInstance[];
+  selectedTaskId: string | null;
+  taskGroupBy: TaskGroupBy;
 }
 
 interface TUIStoreOptions {
@@ -351,6 +365,10 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     breakpoints: options.breakpoints,
     groupBy: options.groupBy ?? DEFAULT_GROUP_BY,
     hideIdle: options.hideIdle ?? false,
+    view: "sessions",
+    tasks: [],
+    selectedTaskId: null,
+    taskGroupBy: "status",
   });
 
   // Effect: capture pane content for search (debounced)
@@ -622,6 +640,15 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     );
   });
 
+  // Task board flat items (headers + task rows) for the current grouping.
+  const taskFlatItems = createMemo((): TaskFlatItem[] =>
+    buildTaskFlatItems(state.tasks, state.taskGroupBy),
+  );
+  // Flat-item index of the selected task row (for scroll-into-view).
+  const selectedTaskFlatIndex = createMemo(() =>
+    taskFlatIndex(taskFlatItems(), state.selectedTaskId),
+  );
+
   const selectedIndex = trackedMemo("selectedIndex", () => {
     const items = flatItems();
 
@@ -814,6 +841,76 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
         }
         setState("selectedSessionId", null);
       }
+    },
+
+    // --- Task board (phase 3) -------------------------------------------------
+
+    /** Replace the whole task list (init snapshot / reconnect). */
+    reconcileTasks(tasks: TaskInstance[]) {
+      setState("tasks", tasks);
+      if (
+        state.selectedTaskId &&
+        !tasks.some((t) => t.id === state.selectedTaskId)
+      ) {
+        setState("selectedTaskId", null);
+      }
+    },
+
+    addTask(task: TaskInstance) {
+      const idx = state.tasks.findIndex((t) => t.id === task.id);
+      if (idx !== -1) setState("tasks", idx, task);
+      else setState("tasks", (t) => [...t, task]);
+    },
+
+    /** Upsert by id — a `task_updated` may arrive for a task we haven't seen
+     *  created (e.g. correlation refresh after a snapshot gap). */
+    updateTask(task: TaskInstance) {
+      const idx = state.tasks.findIndex((t) => t.id === task.id);
+      if (idx !== -1) setState("tasks", idx, task);
+      else setState("tasks", (t) => [...t, task]);
+    },
+
+    removeTask(id: string) {
+      setState("tasks", (t) => t.filter((task) => task.id !== id));
+      if (state.selectedTaskId === id) setState("selectedTaskId", null);
+    },
+
+    /** Toggle between the session list and the task board; auto-select the
+     *  first task when entering the board with none selected. */
+    toggleView() {
+      const next = state.view === "tasks" ? "sessions" : "tasks";
+      setState("view", next);
+      if (
+        next === "tasks" &&
+        !state.selectedTaskId &&
+        state.tasks.length > 0
+      ) {
+        setState("selectedTaskId", state.tasks[0].id);
+      }
+    },
+
+    /** Move task-board selection by delta over the task rows in the current
+     *  grouping (headers are skipped). With no current selection, any move
+     *  lands on the first task row. */
+    moveTaskSelection(delta: number) {
+      const rows = taskFlatItems().filter(
+        (i): i is Extract<TaskFlatItem, { type: "task" }> => i.type === "task",
+      );
+      if (rows.length === 0) return;
+      const cur = rows.findIndex((r) => r.task.id === state.selectedTaskId);
+      if (cur === -1) {
+        setState("selectedTaskId", rows[0].task.id);
+        return;
+      }
+      const nextIdx = Math.max(0, Math.min(rows.length - 1, cur + delta));
+      setState("selectedTaskId", rows[nextIdx].task.id);
+    },
+
+    /** Cycle the task board grouping: status → project → none. */
+    cycleTaskGroupBy() {
+      const i = TASK_GROUP_BY_ORDER.indexOf(state.taskGroupBy);
+      const next = TASK_GROUP_BY_ORDER[(i + 1) % TASK_GROUP_BY_ORDER.length];
+      setState("taskGroupBy", next);
     },
 
     /** An invoke worker began executing (invocation_started SSE event). */
@@ -1284,6 +1381,8 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     selectedGroupSessions,
     collapsedGroups,
     pinnedGroups,
+    taskFlatItems,
+    selectedTaskFlatIndex,
     actions,
     tick,
     bumpTick: () => setTick((t) => t + 1),

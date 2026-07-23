@@ -3,6 +3,8 @@ import type { ConnectionState } from "../utils/sse";
 import { theme } from "../theme";
 
 interface HeaderProps {
+  /** Title before the count (default "Sessions"; "Tasks" on the board). */
+  label?: string;
   sessionCount: number;
   totalCount?: number;
   hideIdle?: boolean;
@@ -32,7 +34,7 @@ export const Header: Component<HeaderProps> = (props) => {
       <box flexDirection="row" width="100%">
         <text fg={c(dotColor(props.connectionState))}>● </text>
         <text fg={c(undefined)}>
-          <b>Sessions</b>
+          <b>{props.label ?? "Sessions"}</b>
         </text>
         <text fg={c(theme.overlay)}>
           {" "}

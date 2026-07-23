@@ -1,4 +1,13 @@
-import { describe, it, expect, spyOn, afterAll, mock } from "bun:test";
+import {
+  describe,
+  it,
+  expect,
+  spyOn,
+  afterAll,
+  afterEach,
+  beforeEach,
+  mock,
+} from "bun:test";
 import {
   DaemonServer,
   rejectCrossOriginBrowser,
@@ -14,6 +23,9 @@ import type { Session, TmuxPane, EnrichedSession } from "../types/session";
 import { AttentionTracker } from "./attention-tracker";
 import { InvocationManager } from "./invocation-manager";
 import { InvocationRegistry } from "./invokers/registry";
+import { TaskManager } from "./task-manager";
+import { launchTask } from "./task-launcher";
+import { setNowForTests } from "../lib/task-store";
 import { stubInvoker } from "./invokers/test-helpers";
 import type { HookAdapter } from "./hook-adapter";
 import { mkdtempSync, writeFileSync, rmSync } from "fs";
@@ -89,6 +101,8 @@ type ServerInternals = {
   ): Promise<Response>;
   handleSSE(): Response;
   invocationManager: InvocationManager;
+  taskManager: TaskManager;
+  backfillTaskLink(session: Session): Promise<void>;
   handleRequest(req: Request): Promise<Response>;
   getServerSocketPath(): Promise<string | null>;
 };
@@ -106,7 +120,7 @@ function createServer(
     sendLiteralToPane: mock(async () => true),
     sendPromptToPane: mock(async () => true),
   },
-  runNotificationAction?: ConstructorParameters<typeof DaemonServer>[7],
+  runNotificationAction?: ConstructorParameters<typeof DaemonServer>[8],
 ) {
   const mgr = manager ?? new SessionManager();
   const cache = paneCache ?? new Map<string, TmuxPane>();
@@ -118,6 +132,26 @@ function createServer(
       stubInvoker("subprocess"),
     ),
   );
+  // Real launcher logic (target branching, targetRef checks) over a fake tmux
+  // runner, so run-route tests exercise validation without touching tmux.
+  const taskManager = new TaskManager({
+    launch: (task) =>
+      launchTask(task, {
+        getAgentByType: () => undefined,
+        runTmux: async (args) => ({
+          code: 0,
+          stdout:
+            args[0] === "new-window" || args[0] === "split-window"
+              ? "%stub\n"
+              : "",
+          stderr: "",
+        }),
+        prefs: {},
+        // Fake delivery so the launcher never touches real tmux.
+        sendLiteral: async () => true,
+        sendPrompt: async () => true,
+      }),
+  });
   const resolveHookAdapter = getHookAdapter ?? ((_name: string) => null);
   const resolveAgent =
     agentLookup ??
@@ -128,6 +162,7 @@ function createServer(
     resolveAgent,
     attn,
     invocationManager,
+    taskManager,
     resolveHookAdapter,
     paneSendDeps,
     runNotificationAction ?? null,
@@ -2430,5 +2465,241 @@ describe("POST /notification-action", () => {
       postBody({ sessionId: "s1", action: "approve" }),
     );
     expect(res.status).toBe(503);
+  });
+});
+
+describe("task HTTP endpoints", () => {
+  const savedStateHome = process.env.CCMUX_STATE_HOME;
+  let stateHome: string;
+
+  beforeEach(() => {
+    stateHome = mkdtempSync(join(tmpdir(), "ccmux-task-http-"));
+    process.env.CCMUX_STATE_HOME = stateHome;
+    setNowForTests(() => "2024-01-15T12:00:00Z");
+  });
+
+  afterEach(() => {
+    setNowForTests();
+    rmSync(stateHome, { recursive: true, force: true });
+    if (savedStateHome === undefined) delete process.env.CCMUX_STATE_HOME;
+    else process.env.CCMUX_STATE_HOME = savedStateHome;
+  });
+
+  const jsonPost = (path: string, body: unknown) =>
+    new Request(`http://localhost${path}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: typeof body === "string" ? body : JSON.stringify(body),
+    });
+
+  async function createOne(internals: ServerInternals): Promise<string> {
+    const res = await internals.handleRequest(
+      // A real dir so the launcher's cwd check passes on run.
+      jsonPost("/tasks", { project: tmpdir(), agent: "claude", prompt: "hi" }),
+    );
+    const json = (await res.json()) as { task: { id: string } };
+    return json.task.id;
+  }
+
+  it("POST then GET /tasks returns the created task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      new Request("http://localhost/tasks"),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { tasks: Array<{ id: string }> };
+    expect(json.tasks.map((t) => t.id)).toEqual([id]);
+  });
+
+  it("GET /tasks/{id} returns 404 for an unknown id", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      new Request("http://localhost/tasks/nope"),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks with malformed JSON returns 400", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(jsonPost("/tasks", "{ not json"));
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks resolving to new-session returns 400", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", {
+        project: "p",
+        agent: "claude",
+        prompt: "hi",
+        target: "new-session",
+      }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/{id}/status with an unknown status returns 400", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/status`, { status: "bogus" }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/{id}/status for a missing id returns 404", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks/nope/status", { status: "running" }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/status updates and broadcasts", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/status`, { status: "running" }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { task: { status: string } };
+    expect(json.task.status).toBe("running");
+  });
+
+  it("DELETE /tasks/{id} is idempotent", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const first = await internals.handleRequest(
+      new Request(`http://localhost/tasks/${id}`, { method: "DELETE" }),
+    );
+    expect(first.status).toBe(200);
+    const second = await internals.handleRequest(
+      new Request(`http://localhost/tasks/${id}`, { method: "DELETE" }),
+    );
+    expect(second.status).toBe(200);
+  });
+
+  it("POST /tasks/{id}/run launches a new-window task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/run`, {}),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { task: { status: string; paneId?: string } };
+    expect(json.task.status).toBe("running");
+    expect(json.task.paneId).toBe("%stub");
+  });
+
+  it("POST /tasks/{id}/run returns 404 for a missing task", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks/nope/run", {}),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/run returns 400 for send-to-existing without targetRef", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", {
+        project: "p",
+        agent: "claude",
+        prompt: "hi",
+        target: "send-to-existing",
+      }),
+    );
+    const id = ((await res.json()) as { task: { id: string } }).task.id;
+    const run = await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    expect(run.status).toBe(400);
+  });
+
+  it("backfillTaskLink links a task when a session binds its pane", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // pane %stub
+
+    await internals.backfillTaskLink({ id: "sess-1", tmuxPane: "%stub" } as Session);
+
+    const got = await internals.taskManager.get(id);
+    expect(got?.sessionId).toBe("sess-1");
+  });
+
+  it("a removed session stops its linked task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // pane %stub
+    await internals.backfillTaskLink({
+      id: "sess-1",
+      tmuxPane: "%stub",
+      nativeSessionId: "nat",
+    } as Session);
+
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "sess-1" });
+
+    const got = await internals.taskManager.get(id);
+    expect(got?.status).toBe("stopped");
+    expect(got?.nativeSessionId).toBe("nat");
+  });
+
+  it("an unrelated session removal changes no task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    await internals.backfillTaskLink({ id: "sess-1", tmuxPane: "%stub" } as Session);
+
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "other" });
+
+    expect((await internals.taskManager.get(id))?.status).toBe("running");
+  });
+
+  // Drive a task to `stopped` (create → run → correlate → session removed).
+  async function stoppedTaskId(internals: ServerInternals): Promise<string> {
+    const id = await createOne(internals); // agent claude, real cwd
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {}));
+    await internals.backfillTaskLink({
+      id: "sess-r",
+      tmuxPane: "%stub",
+      nativeSessionId: "nat",
+    } as Session);
+    await internals.sessionEventToSSE({ type: "removed", sessionId: "sess-r" });
+    return id;
+  }
+
+  it("POST /tasks/{id}/resume resumes a stopped task", async () => {
+    const { internals } = createServer();
+    const id = await stoppedTaskId(internals);
+    expect((await internals.taskManager.get(id))?.status).toBe("stopped");
+
+    const res = await internals.handleRequest(jsonPost(`/tasks/${id}/resume`, {}));
+    expect(res.status).toBe(200);
+    const got = await internals.taskManager.get(id);
+    expect(got?.status).toBe("running");
+    expect(got?.nativeSessionId).toBe("nat"); // preserved
+  });
+
+  it("POST /tasks/{id}/resume with a follow-up prompt succeeds", async () => {
+    const { internals } = createServer();
+    const id = await stoppedTaskId(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/resume`, { prompt: "continue" }),
+    );
+    expect(res.status).toBe(200);
+    expect((await internals.taskManager.get(id))?.status).toBe("running");
+  });
+
+  it("POST /tasks/{id}/resume returns 404 for a missing task", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(jsonPost("/tasks/nope/resume", {}));
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/resume returns 400 for a non-stopped task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(jsonPost(`/tasks/${id}/run`, {})); // running
+    const res = await internals.handleRequest(jsonPost(`/tasks/${id}/resume`, {}));
+    expect(res.status).toBe(400);
   });
 });

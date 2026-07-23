@@ -143,6 +143,30 @@ export const PREFS_FILE = join(CCMUX_DIR, "ccmux.json");
 export const STATE_FILE = join(CCMUX_DIR, "state.json");
 export const MARKERS_DIR = join(CCMUX_DIR, "session-pids");
 
+/**
+ * ccmux's own STATE directory, distinct from the config dir above.
+ *
+ * `$CCMUX_HOME` is already bound to the *config* dir (`~/.config/ccmux`), so it
+ * cannot double as the state home. Runtime state that is not user-edited config
+ * — currently the task store — lives here instead: `$CCMUX_STATE_HOME`, default
+ * `~/.ccmux`. Read at call time (like {@link getCcmuxDirPath}) so tests can
+ * redirect it after import. This change relocates nothing else; existing
+ * config-dir files (`STATE_FILE`, `PREFS_FILE`, `MARKERS_DIR`) stay put.
+ */
+export function getStateHomePath(): string {
+  return process.env.CCMUX_STATE_HOME ?? join(homedir(), ".ccmux");
+}
+
+/** Directory holding one JSON file per task instance. */
+export function getTasksDir(): string {
+  return join(getStateHomePath(), "tasks");
+}
+
+/** Path to a single task instance's file. */
+export function taskFilePath(id: string): string {
+  return join(getTasksDir(), `${id}.json`);
+}
+
 const CCMUX_PANE_PREFIX = "ccmux-";
 export const SIDEBAR_PANE_TITLE = "ccmux-sidebar";
 export const PICKER_PANE_TITLE = "ccmux-picker";

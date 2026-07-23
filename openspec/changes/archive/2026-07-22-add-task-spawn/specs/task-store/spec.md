@@ -1,0 +1,77 @@
+## MODIFIED Requirements
+
+### Requirement: Task data model
+
+The system SHALL define a `Task` type with a single schema serving two lifecycles: a persistent **template** and an ephemeral **instance**. A `Task` MUST carry the fields `project`, `target`, `agent`, `prompt`, and `status`, and MAY carry `worktree` and `targetRef`. A slash-command, when present, SHALL be part of the `prompt` string, not a separate field. Instances additionally carry a unique `id`, creation/update timestamps, and MAY carry the correlation link fields `paneId` (the tmux pane the task was launched into) and `sessionId` (the ccmux session correlated to it). The link fields are absent at creation and set post-launch.
+
+The `target` field SHALL be one of `new-window`, `split`, or `send-to-existing`. The value `new-session` is reserved and MUST NOT be accepted.
+
+The optional `targetRef` field SHALL identify the tmux pane or session that a `split` or `send-to-existing` target acts on. The data model persists the field; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it.
+
+The `worktree` field SHALL be either a boolean or an object `{ branch?: string; base?: string }`. Absent or `false` means no worktree; `true` means a worktree with defaulted naming; the object form names the branch and/or base for the worktree created by a later capability. Actual worktree creation is out of scope for the data model.
+
+The `status` field of an instance SHALL be one of `pending`, `running`, `done`, or `failed`.
+
+#### Scenario: Valid instance accepted
+
+- **WHEN** a task instance is created with `project`, `target: "new-window"`, `agent`, `prompt`, and `status: "pending"`
+- **THEN** the store persists it and assigns a unique `id` and creation timestamp
+
+#### Scenario: Reserved target rejected
+
+- **WHEN** a task is created with `target: "new-session"`
+- **THEN** creation is rejected with an error and nothing is persisted
+
+#### Scenario: Worktree names a branch
+
+- **WHEN** a task is created with `worktree: { branch: "feat/x", base: "main" }`
+- **THEN** the store persists the branch and base for later worktree creation
+
+#### Scenario: targetRef persisted for send-to-existing
+
+- **WHEN** a task is created with `target: "send-to-existing"` and `targetRef: "%3"`
+- **THEN** the store persists `targetRef` alongside the instance
+
+#### Scenario: Link fields absent at creation
+
+- **WHEN** a task instance is created
+- **THEN** its `paneId` and `sessionId` are unset until the task is launched and correlated
+
+### Requirement: Task instance persistence
+
+The system SHALL provide a task-instance store persisted as JSON under the state home, supporting create, list, get-by-id, update-status, patch-fields, and delete. The store directory MUST be created lazily on first write. The patch-fields operation SHALL merge a partial set of instance fields (e.g. `paneId`, `sessionId`, `status`) into an existing instance and refresh `updatedAt`, returning the updated instance or nothing when it does not exist. A `done` task MAY be deleted; deletion MUST remove it from subsequent listings.
+
+#### Scenario: Create then list
+
+- **WHEN** a task instance is created and the store is listed
+- **THEN** the created instance appears in the list with its assigned `id`
+
+#### Scenario: Update status
+
+- **WHEN** an existing instance's status is updated from `pending` to `running`
+- **THEN** a subsequent get-by-id returns the instance with `status: "running"` and a refreshed update timestamp
+
+#### Scenario: Patch link fields
+
+- **WHEN** an existing instance is patched with a `paneId` and `sessionId`
+- **THEN** a subsequent get-by-id returns those fields and a refreshed `updatedAt`, with all other fields preserved
+
+#### Scenario: Patch a missing task
+
+- **WHEN** a patch is applied to an unknown id
+- **THEN** the store returns nothing and persists nothing
+
+#### Scenario: Delete completed task
+
+- **WHEN** a `done` instance is deleted
+- **THEN** it no longer appears in listings and get-by-id returns nothing
+
+#### Scenario: Absent store dir degrades to empty
+
+- **WHEN** the tasks directory does not exist
+- **THEN** listing returns an empty result and no error is thrown
+
+#### Scenario: Malformed task file skipped
+
+- **WHEN** the tasks directory contains one invalid-JSON file alongside valid task files
+- **THEN** listing returns the valid instances and skips the malformed file without throwing

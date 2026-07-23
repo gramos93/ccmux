@@ -3,6 +3,15 @@ import { dirname } from "path";
 import { PREFS_FILE } from "./config";
 import type { IconStyle } from "./icons";
 import type { AttentionType, SessionStatus } from "../types/session";
+import type { TaskSpec, TaskTemplate } from "./task";
+
+/** Global task defaults (e.g. `worktree`, `agent`, `target`); every field
+ *  optional. The lowest-priority layer of the default cascade. */
+export type TaskDefaults = Partial<TaskSpec>;
+
+/** Per-project task overrides; every field optional. Overrides
+ *  {@link TaskDefaults} for tasks created in that project. */
+export type ProjectConfig = Partial<TaskSpec>;
 
 /** How sessions are grouped in the TUI */
 export type GroupBy = "project" | "cwd" | "session" | "window" | "none";
@@ -335,6 +344,23 @@ export interface Preferences {
    * each with a warning. See `resolveTheme` in `src/tui/theme.ts`.
    */
   theme?: ThemeConfig;
+  /**
+   * Named `Task` presets. Each is a partial `TaskSpec` applied as the template
+   * layer of the default cascade. Optional; absence changes nothing. See
+   * `resolveTask` in `src/lib/task.ts`.
+   */
+  templates?: Record<string, TaskTemplate>;
+  /**
+   * Per-project task overrides, keyed by project. Override global
+   * {@link Preferences.defaults} for tasks created in that project. Optional.
+   */
+  projects?: Record<string, ProjectConfig>;
+  /**
+   * Global task defaults — the lowest-priority layer of the default cascade
+   * (e.g. `worktree`, `agent`, `target`). Optional; POC-friendly (no
+   * per-project or template config is required to create a task).
+   */
+  defaults?: TaskDefaults;
 }
 
 /**

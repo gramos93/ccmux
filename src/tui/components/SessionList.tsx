@@ -192,6 +192,13 @@ export const SessionList: Component<SessionListProps> = (props) => {
             const bump = () => setScrollboxLayout((v) => v + 1);
             r.viewport.on("resize", bump);
             r.content.on("resize", bump);
+            // On a REMOUNT (e.g. returning from the task board) the viewport/
+            // content may settle at the same size without emitting `resize`,
+            // leaving the scroll-into-view effect stuck on its zero-size first
+            // run — so `j/k` couldn't scroll to the end. Force one re-run once
+            // layout has settled.
+            queueMicrotask(bump);
+            setTimeout(bump, 0);
           }}
           flexGrow={1}
         >
