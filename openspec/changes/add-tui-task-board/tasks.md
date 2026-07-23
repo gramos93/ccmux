@@ -33,7 +33,7 @@
 
 ## 6. Verification
 
-- [ ] 6.1 `bun run typecheck` passes
-- [ ] 6.2 `bun test` passes (new suites included)
-- [ ] 6.3 **Renderer check (mandatory, AGENTS.md):** launch `ccmux picker` in a detached tmux session (`tmux new-session -d -s ccmux-verify -x 200 -y 50`), create a couple of tasks (one running, one stopped) via the daemon, toggle to the board with `t`, and `capture-pane` to confirm rows render (status colors, agent, live-activity for running, short id) and the empty state reads well; resize to a narrow viewport and re-capture. Tear down the session.
-- [ ] 6.4 Confirm no daemon/protocol changes (TUI-only slice)
+- [x] 6.1 `bun run typecheck` passes
+- [x] 6.2 `bun test` passes (new suites included)
+- [x] 6.3 **Renderer check (mandatory, AGENTS.md):** launch `ccmux picker` in a detached tmux session (`tmux new-session -d -s ccmux-verify -x 200 -y 50`), create a couple of tasks (one running, one stopped) via the daemon, toggle to the board with `t`, and `capture-pane` to confirm rows render (status colors, agent, live-activity for running, short id) and the empty state reads well; resize to a narrow viewport and re-capture. Tear down the session.
+- [x] 6.4 Confirm no daemon/protocol changes (TUI-only slice)

@@ -1232,12 +1232,19 @@ export function App(props: AppProps) {
     >
       <box flexDirection="column" width="100%" height="100%">
         <Header
-          sessionCount={store.filteredSessions().length}
+          label={store.state.view === "tasks" ? "Tasks" : "Sessions"}
+          sessionCount={
+            store.state.view === "tasks"
+              ? store.state.tasks.length
+              : store.filteredSessions().length
+          }
           totalCount={
-            store.state.hideIdle ||
-            (store.state.searchMode && store.state.searchQuery)
-              ? store.sortedSessions().length
-              : undefined
+            store.state.view === "tasks"
+              ? undefined
+              : store.state.hideIdle ||
+                  (store.state.searchMode && store.state.searchQuery)
+                ? store.sortedSessions().length
+                : undefined
           }
           hideIdle={store.state.hideIdle}
           connectionState={store.state.connectionState}
@@ -1335,6 +1342,7 @@ export function App(props: AppProps) {
             persistent={props.persistent}
             groupBy={store.state.groupBy}
             reviewable={reviewEnabled}
+            taskView={store.state.view === "tasks"}
           />
         </Show>
 
