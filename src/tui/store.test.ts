@@ -2617,6 +2617,21 @@ describe("store", () => {
       expect(store.state.view).toBe("sessions");
     });
 
+    it("selectedTask resolves the selected instance, else falls back to the first", () => {
+      const store = createTUIStore();
+      expect(store.selectedTask()).toBeNull(); // no tasks yet
+      store.actions.reconcileTasks([
+        mockTask({ id: "a", name: "first" }),
+        mockTask({ id: "b", name: "second" }),
+      ]);
+      // Fallback to the first task even before an explicit selection.
+      expect(store.selectedTask()?.id).toBe("a");
+      store.actions.moveTaskSelection(1); // null selection snaps to the first row
+      expect(store.selectedTask()?.id).toBe("a");
+      store.actions.moveTaskSelection(1); // now advances
+      expect(store.selectedTask()?.id).toBe("b");
+    });
+
     it("cycleTaskGroupBy cycles status → project → none → status", () => {
       const store = createTUIStore();
       expect(store.state.taskGroupBy).toBe("status");

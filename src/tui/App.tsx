@@ -16,6 +16,7 @@ import {
 } from "@opentui/solid";
 import type { KeyEvent, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import type { EnrichedSession } from "../types/session";
+import type { TaskInstance } from "../lib/task";
 import { createTUIStore, TickContext } from "./store";
 import { killActionPath, restartActionPath } from "./utils/invoke-actions";
 import {
@@ -51,6 +52,7 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
 import { TaskList } from "./components/TaskList";
+import { TaskDetail } from "./components/TaskDetail";
 import { TaskCreateModal } from "./components/TaskCreateModal";
 import {
   buildCreateBody,
@@ -919,6 +921,15 @@ export function App(props: AppProps) {
     return store.state.sessions.find((s) => s.id === id) || null;
   };
 
+  /** The live session backing the selected board task's preview: only for a
+   *  running task with a resolvable linked session (else the board shows the
+   *  static TaskDetail card). */
+  const selectedTaskLiveSession = createMemo(() => {
+    const task = store.selectedTask();
+    if (!task || task.status !== "running" || !task.sessionId) return null;
+    return getSessionById(task.sessionId);
+  });
+
   /** Extract group context from the selected item for group move operations */
   const getGroupMoveContext = (item: FlatItem | null) => {
     if (!item?.groupKey) return null;
@@ -1150,6 +1161,22 @@ export function App(props: AppProps) {
         deleteSelectedTask();
       } else if (key === "b") {
         store.actions.cycleTaskGroupBy();
+      } else if (key === "P" || (key === "p" && event.shift)) {
+        // Same gesture as the session view's preview toggle.
+        store.actions.togglePreview();
+      } else if (
+        (key === "d" || key === "u") &&
+        event.ctrl &&
+        previewScrollbox &&
+        store.state.showPreview
+      ) {
+        // Scroll the board preview pane (running task's live pane or the
+        // TaskDetail card), mirroring the session view's ctrl-d/ctrl-u.
+        const halfPage = Math.floor(
+          (previewScrollbox.viewport?.height ?? 10) / 2,
+        );
+        const delta = key === "d" ? halfPage : -halfPage;
+        previewScrollbox.scrollTo(previewScrollbox.scrollTop + delta);
       }
       event.preventDefault();
       return;
@@ -1539,6 +1566,34 @@ export function App(props: AppProps) {
               getSessionById={getSessionById}
               iconStyle={store.state.iconStyle}
             />
+            <Show when={!props.sidebar && store.state.showPreview}>
+              <Show
+                when={selectedTaskLiveSession()}
+                fallback={
+                  <Show when={store.selectedTask()}>
+                    {(task: () => TaskInstance) => (
+                      <TaskDetail
+                        task={task()}
+                        width={store.state.previewWidth}
+                        focused={store.state.previewFocused}
+                        onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                      />
+                    )}
+                  </Show>
+                }
+              >
+                {(session: () => EnrichedSession) => (
+                  <Preview
+                    session={session()}
+                    onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                    iconStyle={store.state.iconStyle}
+                    width={store.state.previewWidth}
+                    focused={store.state.previewFocused}
+                    refreshKey={previewRefreshKey()}
+                  />
+                )}
+              </Show>
+            </Show>
           </Show>
         </box>
 

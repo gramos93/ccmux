@@ -2,7 +2,7 @@ import type { Component } from "solid-js";
 import { Show } from "solid-js";
 import { basename } from "path";
 import type { EnrichedSession } from "../../types";
-import type { TaskInstance, TaskStatus } from "../../lib/task";
+import { taskDisplayName, type TaskInstance, type TaskStatus } from "../../lib/task";
 import type { IconStyle } from "../../lib/icons";
 import { theme } from "../theme";
 import { agentColorFor } from "./SessionItem";
@@ -48,19 +48,21 @@ export const TaskRow: Component<TaskRowProps> = (props) => {
   const bg = () => (props.selected ? theme.surface : undefined);
   return (
     <box flexDirection="row" backgroundColor={bg()}>
-      <text fg={theme.overlay}>{`${shortId(props.task.id)}  `}</text>
       <text fg={taskStatusColor(props.task.status)}>
         {`● ${props.task.status.padEnd(8)}`}
       </text>
+      <box flexGrow={1} flexShrink={1}>
+        <text fg={theme.text}>{taskDisplayName(props.task)}</text>
+      </box>
       <text fg={agentColorFor(props.task.agent)}>
-        {props.task.agent.padEnd(9)}
+        {`  ${props.task.agent.padEnd(9)}`}
       </text>
       <text
         fg={props.task.target === "background" ? theme.mauve : theme.overlay}
       >
         {taskKindLabel(props.task).padEnd(5)}
       </text>
-      <text fg={theme.text}>{`${basename(props.task.project)}  `}</text>
+      <text fg={theme.subtext}>{`${basename(props.task.project)}  `}</text>
       <Show when={props.task.status === "running" ? props.liveSession : null}>
         {(session: () => EnrichedSession) => (
           <StatusBadge
@@ -71,6 +73,7 @@ export const TaskRow: Component<TaskRowProps> = (props) => {
           />
         )}
       </Show>
+      <text fg={theme.overlay}>{`  ${shortId(props.task.id)}`}</text>
     </box>
   );
 };

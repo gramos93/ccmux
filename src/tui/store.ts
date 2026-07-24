@@ -695,6 +695,20 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
   const selectedTaskFlatIndex = createMemo(() =>
     taskFlatIndex(taskFlatItems(), state.selectedTaskId),
   );
+  // The selected task instance driving the board preview: the row matching
+  // `selectedTaskId`, else the first task (so the pane is never blank while
+  // tasks exist). Mirrors `moveTaskSelection`, which snaps a null selection to
+  // the first row on the first move.
+  const selectedTask = createMemo((): TaskInstance | null => {
+    if (state.selectedTaskId) {
+      const byId = state.tasks.find((t) => t.id === state.selectedTaskId);
+      if (byId) return byId;
+    }
+    const first = taskFlatItems().find(
+      (i): i is Extract<TaskFlatItem, { type: "task" }> => i.type === "task",
+    );
+    return first ? first.task : null;
+  });
 
   // Create-modal: the visible (focusable) fields for the current form, the
   // currently-focused one (clamped), and whether the form can be submitted.
@@ -1588,6 +1602,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     pinnedGroups,
     taskFlatItems,
     selectedTaskFlatIndex,
+    selectedTask,
     visibleCreateFields,
     focusedCreateField,
     createFormValid,
