@@ -17,7 +17,10 @@ interface TaskCreateModalProps {
   focusedField: CreateField;
   /** Whether the form can be submitted (prompt/template + a resolved pane). */
   valid: boolean;
+  /** Edit mode: retitles the modal and (via `visibleFields`) hides run-now. */
+  editing?: boolean;
   onPromptInput: (value: string) => void;
+  onNameInput: (value: string) => void;
   // Searchable project picker (sub-overlay).
   projectPickerOpen: boolean;
   projectQuery: string;
@@ -28,6 +31,7 @@ interface TaskCreateModalProps {
 }
 
 const FIELD_LABEL: Record<CreateField, string> = {
+  name: "Name",
   agent: "Agent",
   project: "Project",
   target: "Target",
@@ -78,7 +82,7 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
       paddingRight={1}
     >
       <text fg={theme.text}>
-        <strong>New task</strong>
+        <strong>{props.editing ? "Edit task" : "New task"}</strong>
       </text>
       <box height={1} />
 
@@ -92,7 +96,7 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
                 {FIELD_LABEL[field]}
               </text>
               <Show
-                when={field === "prompt"}
+                when={field === "prompt" || field === "name"}
                 fallback={
                   <text fg={focused() ? theme.text : theme.subtext}>
                     {displayValue(field, props)}
@@ -100,10 +104,16 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
                 }
               >
                 <input
-                  value={props.form.prompt}
-                  onInput={props.onPromptInput}
+                  value={field === "name" ? props.form.name : props.form.prompt}
+                  onInput={
+                    field === "name" ? props.onNameInput : props.onPromptInput
+                  }
                   focused={focused() && !props.projectPickerOpen}
-                  placeholder="what should the agent do?"
+                  placeholder={
+                    field === "name"
+                      ? "task name (optional — derived from prompt)"
+                      : "what should the agent do?"
+                  }
                   placeholderColor={theme.overlay}
                   textColor={theme.text}
                   cursorColor={theme.blue}
@@ -120,7 +130,7 @@ export const TaskCreateModal: Component<TaskCreateModalProps> = (props) => {
       <box height={1} />
       <text fg={theme.overlay}>
         {props.valid
-          ? "enter create · ←/→ change · space toggle/search · esc cancel"
+          ? `enter ${props.editing ? "save" : "create"} · ←/→ change · space toggle/search · esc cancel`
           : "needs prompt/template" +
             (props.form.target === "split" ||
             props.form.target === "send-to-existing"

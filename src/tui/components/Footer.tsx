@@ -43,16 +43,16 @@ export const Footer: Component<FooterProps> = (props) => {
         </Match>
         <Match when={props.taskView}>
           <text fg={theme.overlay}>
-            j/k nav · enter run/resume/open · c create · r run/resume · x delete
-            · b group · t sessions · q quit
+            j/k nav · enter open · c create · C clone · e edit · r run/resume · x
+            delete · b group · t sessions · q quit
           </text>
         </Match>
         <Match when={true}>
           <text fg={theme.overlay}>
             j/k nav · enter {props.persistent ? "switch" : "select"} · / search
             · b group:{props.groupBy ?? DEFAULT_GROUP_BY} · P preview · r
-            restart · x kill{props.reviewable ? " · d review" : ""} · ? help · q
-            quit
+            restart · x kill{props.reviewable ? " · d review" : ""} · t tasks ·
+            ? help · q quit
           </text>
         </Match>
       </Switch>

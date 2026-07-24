@@ -2672,6 +2672,7 @@ describe("store", () => {
 
   describe("create-task modal slice", () => {
     const form = {
+      name: "",
       agent: "claude",
       project: "/a",
       target: "new-window" as const,
@@ -2697,7 +2698,30 @@ describe("store", () => {
       expect(store.state.createModalOpen).toBe(true);
       expect(store.state.createForm.agent).toBe("codex");
       expect(store.state.createFocusIndex).toBe(0);
-      expect(store.focusedCreateField()).toBe("agent");
+      expect(store.focusedCreateField()).toBe("name"); // name leads the form
+    });
+
+    it("openEditModal sets editingTaskId and hides run-now", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openEditModal({ ...form, name: "N" }, options, "task-7");
+      expect(store.state.editingTaskId).toBe("task-7");
+      expect(store.state.createModalOpen).toBe(true);
+      expect(store.visibleCreateFields()).not.toContain("runNow");
+    });
+
+    it("openCloneModal opens create mode (null editingTaskId) with run-now shown", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCloneModal({ ...form, name: "Clone" }, options);
+      expect(store.state.editingTaskId).toBeNull();
+      expect(store.state.createForm.name).toBe("Clone");
+      expect(store.visibleCreateFields()).toContain("runNow");
+    });
+
+    it("closeCreateModal clears editingTaskId", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openEditModal({ ...form }, options, "task-7");
+      store.actions.closeCreateModal();
+      expect(store.state.editingTaskId).toBeNull();
     });
 
     it("closeCreateModal resets the form and closes", () => {

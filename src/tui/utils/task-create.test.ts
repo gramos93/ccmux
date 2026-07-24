@@ -5,7 +5,9 @@ import { join } from "path";
 import {
   buildCreateBody,
   buildCreateOptions,
+  buildEditBody,
   cycleOptionsFor,
+  formFromTask,
   projectPickerChoices,
   resolveTaskActivation,
   scanProjectRoots,
@@ -19,6 +21,7 @@ import { mockEnrichedSession, mockTask } from "../components/test-helpers";
 
 function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
   return {
+    name: "",
     agent: "claude",
     project: "/Users/test/app",
     target: "new-window",
@@ -247,5 +250,69 @@ describe("projectPickerChoices", () => {
   it("does not duplicate an exact known project as a typed path", () => {
     const choices = projectPickerChoices(projects, "/work/thing");
     expect(choices.filter((c) => c.value === "/work/thing")).toHaveLength(1);
+  });
+});
+
+describe("name field + edit/clone helpers", () => {
+  const OPTS: CreateOptions = {
+    agents: ["claude", "codex"],
+    templates: [],
+    projects: ["/a/app"],
+    sessions: [],
+    templateHasPrompt: {},
+  };
+
+  it("buildCreateBody includes name only when non-blank", () => {
+    expect(buildCreateBody(form({ name: "" })).name).toBeUndefined();
+    expect(buildCreateBody(form({ name: "  Fix bug  " })).name).toBe("Fix bug");
+  });
+
+  it("buildEditBody sends the editable subset (name/prompt/agent/project/target)", () => {
+    const body = buildEditBody(
+      form({ name: "N", prompt: "P", agent: "codex", project: "/a/app", target: "new-window" }),
+    );
+    expect(body).toMatchObject({
+      name: "N",
+      prompt: "P",
+      agent: "codex",
+      project: "/a/app",
+      target: "new-window",
+    });
+    expect("targetRef" in body).toBe(false); // new-window doesn't use it
+  });
+
+  it("buildEditBody includes targetRef for a pane placement", () => {
+    const body = buildEditBody(form({ target: "split", targetRef: "%2" }));
+    expect(body.targetRef).toBe("%2");
+  });
+
+  it("formFromTask pre-fills spec fields and defaults run-now off", () => {
+    const f = formFromTask(
+      {
+        name: "Clone me",
+        prompt: "do it",
+        agent: "codex",
+        project: "/a/app",
+        target: "new-session",
+        targetRef: "review",
+      },
+      OPTS,
+    );
+    expect(f).toMatchObject({
+      name: "Clone me",
+      prompt: "do it",
+      agent: "codex",
+      project: "/a/app",
+      target: "new-session",
+      targetRef: "review",
+      runNow: false,
+    });
+  });
+
+  it("visibleCreateFieldsFor leads with name and hides run-now when editing", () => {
+    const fields = visibleCreateFieldsFor(form(), { editing: false });
+    expect(fields[0]).toBe("name");
+    expect(fields).toContain("runNow");
+    expect(visibleCreateFieldsFor(form(), { editing: true })).not.toContain("runNow");
   });
 });
