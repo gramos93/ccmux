@@ -8,6 +8,7 @@ import {
   isAgentResumable,
   launchTask,
   resolveProjectSession,
+  sanitizeTmuxName,
   tmuxSessionName,
   type TaskLauncherDeps,
   type TmuxRunner,
@@ -205,6 +206,16 @@ describe("buildLaunchCommand", () => {
 });
 
 describe("session name disambiguation", () => {
+  it("sanitizeTmuxName replaces forbidden chars and trims; tmuxSessionName keeps its fallbacks", () => {
+    expect(sanitizeTmuxName("a.b:c")).toBe("a-b-c");
+    expect(sanitizeTmuxName("  spaced  ")).toBe("spaced");
+    expect(sanitizeTmuxName("   ")).toBe("");
+    // tmuxSessionName is basename-derived with a `task` fallback when the
+    // basename sanitizes to empty (e.g. a whitespace-only path).
+    expect(tmuxSessionName("/x/y/my.proj")).toBe("my-proj");
+    expect(tmuxSessionName("   ")).toBe("task");
+  });
+
   it("disambiguatedSessionName is deterministic and path-derived", () => {
     const p = "/Users/x/work/api";
     expect(disambiguatedSessionName(p)).toBe(disambiguatedSessionName(p));
@@ -506,6 +517,113 @@ describe("launchTask other targets", () => {
     );
     const create = calls.find((c) => c[0] === "new-session");
     expect(create).toContain(alt);
+  });
+
+  it("new-session with an explicit targetRef creates a session of that exact name", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%24",
+      captures: ["$ ", "❯ "],
+      sessions: {}, // "review" does not exist yet
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ target: "new-session", project: proj, targetRef: "review", prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toBeDefined();
+    expect(create).toContain("review");
+    expect(create).not.toContain(name); // project-derived name is not used
+    // Fresh explicit session is stamped for the project.
+    const stamp = calls.find(
+      (c) => c[0] === "set-option" && c.includes("@ccmux_project"),
+    );
+    expect(stamp).toContain("review");
+    expect(stamp).toContain(proj);
+  });
+
+  it("explicit targetRef attaches to a pre-existing session without disambiguation or re-stamp", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%25",
+      captures: ["$ ", "❯ "],
+      // "review" exists and belongs to a different project — attach anyway.
+      sessions: { review: "/some/other/project" },
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ target: "new-session", project: proj, targetRef: "review", prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    // Opens a window in the named session; no new session, no disambiguation.
+    expect(calls.some((c) => c[0] === "new-session")).toBe(false);
+    const win = calls.find((c) => c[0] === "new-window");
+    expect(win).toContain("review");
+    // Attaching never re-stamps a pre-existing session.
+    expect(calls.some((c) => c[0] === "set-option")).toBe(false);
+  });
+
+  it("explicit targetRef is NOT disambiguated even when a different project owns the name", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%26",
+      captures: ["$ ", "❯ "],
+      sessions: { review: "/some/other/project" },
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({ target: "new-session", project: proj, targetRef: "review", prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    // No hashed alt name anywhere in the tmux calls.
+    const alt = disambiguatedSessionName("review");
+    expect(calls.flat().some((tok) => tok === alt)).toBe(false);
+    // has-session was probed for the plain explicit name, not a resolved one.
+    const probe = calls.find((c) => c[0] === "has-session");
+    expect(probe).toContain("=review");
+  });
+
+  it("empty/all-illegal targetRef falls back to the project-derived name", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%27",
+      captures: ["$ ", "❯ "],
+      sessionExists: false,
+    });
+    const rec = recorder();
+    await launchTask(
+      // "." sanitizes to "-" then trims... "." -> "-", but "  " -> "" ; use whitespace.
+      makeTask({ target: "new-session", project: proj, targetRef: "   ", prompt: "go" }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+    );
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toContain(name); // project-derived, not the blank ref
+  });
+
+  it("resume of a new-session task with a targetRef resolves to the same explicit name", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%28",
+      captures: ["$ ", "❯ "],
+      sessions: {},
+    });
+    const rec = recorder();
+    await launchTask(
+      makeTask({
+        target: "new-session",
+        project: proj,
+        targetRef: "review",
+        nativeSessionId: "nat-9",
+      }),
+      deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
+      { resume: true },
+    );
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toContain("review");
+    expect(rec.literal[0]?.text).toContain("--resume");
   });
 
   it("resume of a new-session task uses the create-or-attach path", async () => {

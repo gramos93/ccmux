@@ -8,7 +8,7 @@ Running a task into a tmux pane and correlating the resulting ccmux session back
 
 ### Requirement: Run a task into a pane
 
-The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launching the resolved agent with the task's prompt and setting status to `running`. For pane targets (`new-window`, `split`, `new-session`) the daemon SHALL verify the task's working directory exists before creating the pane, failing with a clear error when it does not (it may have been deleted between create and run). For `new-window` and `split` it SHALL create a tmux pane, capture its `#{pane_id}`, and launch the agent **adaptively**: run the agent's interactive binary (`executable`, or `resumeCommand` when resuming a session), and once the agent signals readiness (its `readyPattern`, with a timeout fallback) deliver the prompt by submitting it into the agent's composer (a bracketed paste followed by a separate Enter — the proven `sendPromptToPane` mechanism) — NOT via a hardcoded prompt flag and NOT a batched `send-keys <text> Enter` (which leaves the text unsubmitted). For `new-session` it SHALL launch into a dedicated tmux session named after the project (a tmux-sanitized basename), created detached (`tmux new-session -d`) and cd'd to the working directory, capturing its `#{pane_id}` and launching the agent adaptively exactly as for `new-window`; the daemon SHALL stamp each session it creates for a `new-session` task with the tmux user option `@ccmux_project` set to the task's project path. When a session of the project's name already exists the daemon SHALL reuse it (open a new window in it) ONLY when that session's `@ccmux_project` equals the task's project; when the existing session belongs to a different project or has no `@ccmux_project` stamp, the daemon SHALL instead resolve a deterministic disambiguated session name (the sanitized basename plus a short stable suffix derived from the full project path) and apply the same create-or-attach rule to that name, so a task never joins a session that belongs to another project. The disambiguated name SHALL be stable across runs and resume for a given project. When the task carries a raw `command`, that argv SHALL be launched verbatim instead (see the passthrough requirement). For `send-to-existing` it SHALL send the prompt into the pane identified by `targetRef`, which is REQUIRED for that target. Running a task that does not exist SHALL yield `404`.
+The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launching the resolved agent with the task's prompt and setting status to `running`. For pane targets (`new-window`, `split`, `new-session`) the daemon SHALL verify the task's working directory exists before creating the pane, failing with a clear error when it does not (it may have been deleted between create and run). For `new-window` and `split` it SHALL create a tmux pane, capture its `#{pane_id}`, and launch the agent **adaptively**: run the agent's interactive binary (`executable`, or `resumeCommand` when resuming a session), and once the agent signals readiness (its `readyPattern`, with a timeout fallback) deliver the prompt by submitting it into the agent's composer (a bracketed paste followed by a separate Enter — the proven `sendPromptToPane` mechanism) — NOT via a hardcoded prompt flag and NOT a batched `send-keys <text> Enter` (which leaves the text unsubmitted). For `new-session` it SHALL launch into a dedicated tmux session, created detached (`tmux new-session -d`) and cd'd to the working directory, capturing its `#{pane_id}` and launching the agent adaptively exactly as for `new-window`; the daemon SHALL stamp each session it creates for a `new-session` task with the tmux user option `@ccmux_project` set to the task's project path. The session name is chosen as follows: when the task carries a non-empty `targetRef`, the daemon SHALL use it — tmux-sanitized (the characters tmux forbids in session names replaced), falling back to the project-derived name when the sanitized result is empty — as an **explicit** session name and create-or-attach to exactly that session (`has-session` → open a new window; else create detached), WITHOUT the project-ownership/disambiguation check, since naming a session is a deliberate request to use it even if it belongs to another project or was created outside ccmux; otherwise (no `targetRef`) the daemon SHALL use the project-derived name (a tmux-sanitized basename) and, when a session of that name already exists, reuse it (open a new window in it) ONLY when that session's `@ccmux_project` equals the task's project, and when the existing session belongs to a different project or has no `@ccmux_project` stamp SHALL instead resolve a deterministic disambiguated session name (the sanitized basename plus a short stable suffix derived from the full project path) and apply the same create-or-attach rule to that name, so a task never joins a session that belongs to another project. In all cases a freshly created session is stamped with `@ccmux_project` while attaching to a pre-existing session leaves it unstamped, and the chosen name (explicit or project-derived/disambiguated) SHALL be stable across runs and resume for a given task. When the task carries a raw `command`, that argv SHALL be launched verbatim instead (see the passthrough requirement). For `send-to-existing` it SHALL send the prompt into the pane identified by `targetRef`, which is REQUIRED for that target. Running a task that does not exist SHALL yield `404`.
 
 #### Scenario: Run a new-window task adaptively
 
@@ -22,12 +22,12 @@ The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launchin
 
 #### Scenario: Run a new-session task creates a project session
 
-- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task and no tmux session of the project's name exists
+- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task with no `targetRef` and no tmux session of the project's name exists
 - **THEN** a detached tmux session named after the project is created and cd'd to the working directory, its `@ccmux_project` user option is set to the task's project path, the agent is launched into it adaptively, the task's `paneId` is recorded, its status becomes `running`, and a `task_updated` event is broadcast
 
 #### Scenario: new-session reuses a same-named session owned by the same project
 
-- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task and a tmux session of the project's name already exists whose `@ccmux_project` equals the task's project
+- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task with no `targetRef` and a tmux session of the project's name already exists whose `@ccmux_project` equals the task's project
 - **THEN** a new window is opened in that existing session (no duplicate session) and the task is launched into it adaptively with its `paneId` recorded
 
 #### Scenario: new-session disambiguates when the name belongs to a different project
@@ -39,6 +39,21 @@ The daemon SHALL run a task by its `target` via `POST /tasks/{id}/run`, launchin
 
 - **WHEN** a `new-session` task that was placed under a disambiguated name is stopped and later resumed
 - **THEN** resolving the session name for the same project yields the same disambiguated name, so the resume re-creates or attaches to that same project session
+
+#### Scenario: new-session launches into an explicit targetRef session name
+
+- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task whose `targetRef` is a non-empty name and no session of that (sanitized) name exists
+- **THEN** a detached session of that explicit name is created, cd'd to the working directory, stamped with `@ccmux_project`, and the agent is launched into it adaptively — the project-derived name is not used
+
+#### Scenario: Explicit new-session name attaches to a pre-existing session without disambiguation
+
+- **WHEN** `POST /tasks/{id}/run` is called for a `new-session` task whose `targetRef` names a session that already exists, regardless of that session's `@ccmux_project` (a different project's, or an unstamped hand-made session)
+- **THEN** a new window is opened in that named session (no disambiguation, no duplicate) and that pre-existing session is not re-stamped
+
+#### Scenario: Explicit new-session name is stable across resume
+
+- **WHEN** a `new-session` task with a `targetRef` explicit name is stopped and later resumed
+- **THEN** the resume re-creates or attaches to the same named session (the persisted `targetRef`)
 
 #### Scenario: Prompt delivered without a hardcoded flag
 

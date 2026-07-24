@@ -76,13 +76,22 @@ function shellQuote(token: string): string {
 }
 
 /**
+ * Sanitize a raw string into a legal tmux session name: replace the characters
+ * tmux forbids (`.` and `:`) with `-` and trim. Returns "" when nothing usable
+ * remains (callers decide the fallback).
+ */
+export function sanitizeTmuxName(raw: string): string {
+  return raw.replace(/[.:]/g, "-").trim();
+}
+
+/**
  * Derive a tmux session name for a `new-session` task from its project. Uses
- * the path basename, replacing the characters tmux forbids in session names
- * (`.` and `:`) with `-`, and falling back to `task` for an empty result.
+ * the {@link sanitizeTmuxName sanitized} path basename, falling back to `task`
+ * for an empty result.
  */
 export function tmuxSessionName(project: string): string {
   const base = basename(project) || project;
-  const sanitized = base.replace(/[.:]/g, "-").trim();
+  const sanitized = sanitizeTmuxName(base);
   return sanitized.length > 0 ? sanitized : "task";
 }
 
@@ -246,17 +255,28 @@ export async function launchTask(
     "#{pane_id}",
   ];
 
-  // Launch into the project's dedicated session: reuse it only when it already
-  // belongs to this project (same-name, same `@ccmux_project`), else create a
-  // detached session under a path-disambiguated name so a different project's
-  // (or a hand-made) same-named session is never hijacked. A freshly created
-  // session is stamped with `@ccmux_project` (fire-and-forget) so future runs
-  // and resume can recognize it as ours. Shared by the fresh run and resume.
+  // Launch into a dedicated session. With an explicit `targetRef` name the
+  // user is naming a specific container: create-or-attach to exactly that
+  // session with NO ownership/disambiguation (it may be another project's or a
+  // hand-made session — that's the point). Without one, fall to the
+  // project-derived resolver, which reuses a same-named session only when it
+  // already belongs to this project, else picks a path-disambiguated name so a
+  // foreign same-named session is never hijacked. Either way a freshly created
+  // session is stamped with `@ccmux_project` (fire-and-forget) while attaching
+  // never re-stamps. Shared by the fresh run and resume.
   const runNewSession = async (
     launchCommand: string,
     promptToSend: string | undefined,
   ): Promise<LaunchResult> => {
-    const { name, exists } = await resolveProjectSession(deps, task.project);
+    const explicit = task.targetRef ? sanitizeTmuxName(task.targetRef) : "";
+    const { name, exists } = explicit
+      ? {
+          name: explicit,
+          exists:
+            (await deps.runTmux(["has-session", "-t", `=${explicit}`])).code ===
+            0,
+        }
+      : await resolveProjectSession(deps, task.project);
     const head = exists
       ? ["new-window", "-t", name]
       : ["new-session", "-d", "-s", name];

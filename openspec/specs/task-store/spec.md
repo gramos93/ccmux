@@ -12,7 +12,7 @@ The system SHALL define a `Task` type with a single schema serving two lifecycle
 
 The `target` field SHALL be one of `new-window`, `split`, `send-to-existing`, `background`, or `new-session`. `background` denotes a headless run (no pane) executed via the invoke subsystem. `new-session` denotes a launch into a dedicated tmux session named after the project (behavior defined by the task-launch capability). No target value is reserved.
 
-The optional `targetRef` field SHALL identify the tmux pane or session that a `split` or `send-to-existing` target acts on. The data model persists the field; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it. `new-window` and `new-session` do not use it.
+The optional `targetRef` field SHALL identify the tmux pane or session that a target acts on: the pane for `split` and `send-to-existing`, and — for `new-session` — an optional explicit session name to launch into instead of the project-derived name (behavior defined by the task-launch capability). The data model persists the field for any target; spawn behavior enforcing it is defined by the task-launch capability, where `send-to-existing` requires it. `new-window` does not use it.
 
 The optional `command` field SHALL be a raw argv (`string[]`) that, when present, is launched verbatim instead of a command built from the agent adapter. It is the passthrough escape hatch; the data model only persists it. When `command` is present, `prompt` is NOT required (the command is self-contained).
 
@@ -41,6 +41,11 @@ The `status` field of an instance SHALL be one of `pending`, `running`, `stopped
 
 - **WHEN** a task is created with `target: "send-to-existing"` and `targetRef: "%3"`
 - **THEN** the store persists `targetRef` alongside the instance
+
+#### Scenario: targetRef persisted for a new-session explicit name
+
+- **WHEN** a task is created with `target: "new-session"` and `targetRef: "review"`
+- **THEN** the store persists `targetRef` alongside the instance (the explicit session name the task-launch capability will use)
 
 #### Scenario: Link fields absent at creation
 
