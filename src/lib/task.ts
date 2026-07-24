@@ -68,6 +68,13 @@ export type TaskWorktree = boolean | { branch?: string; base?: string };
 export interface TaskSpec {
   /** Project the task runs in (repo root / project key). */
   project: string;
+  /**
+   * Human-readable label for the task. Display-only (no charset restriction).
+   * Foldable through the default cascade. When absent at creation the store
+   * persists a {@link deriveTaskName}-derived default, so a task is never
+   * surfaced by raw id alone.
+   */
+  name?: string;
   /** Where the agent runs. */
   target: TaskTarget;
   /** Agent name (e.g. `claude`, `codex`). */
@@ -143,10 +150,46 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
     target,
     agent,
     prompt: prompt ?? "",
+    ...(spec.name !== undefined ? { name: spec.name } : {}),
     ...(spec.targetRef !== undefined ? { targetRef: spec.targetRef } : {}),
     ...(spec.command !== undefined ? { command: spec.command } : {}),
     ...(spec.worktree !== undefined ? { worktree: spec.worktree } : {}),
   };
+}
+
+/** Max length of a derived task name before it is ellipsized. */
+const DERIVED_NAME_MAX = 50;
+
+/**
+ * Derive a friendly, display-only name from a task's content: the first
+ * non-empty line of the `prompt` (whitespace-collapsed and capped at
+ * {@link DERIVED_NAME_MAX} with an ellipsis), falling back to the `command`'s
+ * head and finally the generic `"task"`. Pure and deterministic.
+ */
+export function deriveTaskName(
+  spec: Pick<Partial<TaskSpec>, "prompt" | "command">,
+): string {
+  const line = (spec.prompt ?? "")
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0);
+  const raw = line ?? spec.command?.[0] ?? "task";
+  const collapsed = raw.replace(/\s+/g, " ").trim() || "task";
+  return collapsed.length > DERIVED_NAME_MAX
+    ? `${collapsed.slice(0, DERIVED_NAME_MAX - 1).trimEnd()}…`
+    : collapsed;
+}
+
+/**
+ * The name to display for a task: its explicit `name`, or a
+ * {@link deriveTaskName}-derived fallback for tasks persisted before `name`
+ * existed (or edited to an empty name). Never returns a bare id.
+ */
+export function taskDisplayName(
+  task: Pick<Partial<TaskSpec>, "name" | "prompt" | "command">,
+): string {
+  const name = task.name?.trim();
+  return name && name.length > 0 ? name : deriveTaskName(task);
 }
 
 /** Sources for the default cascade. Structurally a subset of `Preferences`. */

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "bun:test";
-import { resolveTask, validateNewTask, type TaskSpec } from "./task";
+import {
+  deriveTaskName,
+  resolveTask,
+  taskDisplayName,
+  validateNewTask,
+  type TaskSpec,
+} from "./task";
 
 describe("resolveTask (default cascade)", () => {
   it("creation input wins over global defaults", () => {
@@ -108,5 +114,53 @@ describe("validateNewTask", () => {
     });
     expect(spec.command).toEqual(["codex", "exec", "hi"]);
     expect(spec.prompt).toBe("");
+  });
+
+  it("preserves an explicit name", () => {
+    const spec = validateNewTask({
+      project: "p",
+      target: "new-window",
+      agent: "claude",
+      prompt: "hi",
+      name: "my task",
+    });
+    expect(spec.name).toBe("my task");
+  });
+
+  it("accepts new-session (no reserved target)", () => {
+    const spec = validateNewTask({
+      project: "p",
+      target: "new-session",
+      agent: "claude",
+      prompt: "hi",
+    });
+    expect(spec.target).toBe("new-session");
+  });
+});
+
+describe("deriveTaskName / taskDisplayName", () => {
+  it("derives from the first non-empty prompt line", () => {
+    expect(deriveTaskName({ prompt: "\n  Fix the login bug  \nmore" })).toBe(
+      "Fix the login bug",
+    );
+  });
+
+  it("collapses whitespace and caps long prompts with an ellipsis", () => {
+    const long = "word ".repeat(30).trim();
+    const name = deriveTaskName({ prompt: long });
+    expect(name.length).toBeLessThanOrEqual(50);
+    expect(name.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to the command head, then to 'task'", () => {
+    expect(deriveTaskName({ command: ["codex", "exec"] })).toBe("codex");
+    expect(deriveTaskName({})).toBe("task");
+    expect(deriveTaskName({ prompt: "   " })).toBe("task");
+  });
+
+  it("taskDisplayName prefers an explicit name, else derives", () => {
+    expect(taskDisplayName({ name: "Named", prompt: "ignored" })).toBe("Named");
+    expect(taskDisplayName({ prompt: "derive me" })).toBe("derive me");
+    expect(taskDisplayName({ name: "  ", prompt: "derive me" })).toBe("derive me");
   });
 });

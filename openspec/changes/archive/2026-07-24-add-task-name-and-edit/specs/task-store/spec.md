@@ -1,10 +1,4 @@
-# task-store
-
-## Purpose
-
-The `Task` primitive and its persistence: a single `Task` schema with two lifecycles (persistent template, ephemeral instance), a state home (`~/.ccmux`) distinct from the config dir, a per-file instance store, and the default-cascade resolution that produces a concrete `Task` from global defaults, per-project overrides, templates, and creation-time input. This is the launch/track data foundation; spawn behavior, the daemon API, and TUI views build on it in later capabilities.
-
-## Requirements
+## MODIFIED Requirements
 
 ### Requirement: Task data model
 
@@ -89,6 +83,8 @@ The `status` field of an instance SHALL be one of `pending`, `running`, `stopped
 - **WHEN** a correlated task transitions to `stopped`
 - **THEN** its `nativeSessionId` remains set so the task can be resumed later
 
+## ADDED Requirements
+
 ### Requirement: Edit a task's spec fields
 
 The store SHALL support editing an existing task's spec fields by merging a caller-supplied partial (any of `name`, `prompt`, `agent`, `project`, `target`, `targetRef`, `worktree`, `command`) onto the stored instance and re-validating the merged spec with the same rules applied at creation, then bumping `updatedAt` and persisting. Non-spec fields (`id`, `status`, timestamps, and the correlation link fields) SHALL NOT be editable through this path. A merged spec that fails validation SHALL be rejected and persist nothing. The store edit itself SHALL NOT gate on lifecycle status (status-based restriction is the task-api capability's concern).
@@ -107,99 +103,3 @@ The store SHALL support editing an existing task's spec fields by merging a call
 
 - **WHEN** an edit body includes `status`, `id`, `paneId`, or a timestamp
 - **THEN** those fields are ignored and only the editable spec fields are applied
-
-### Requirement: State home resolution
-
-The system SHALL resolve a state home directory distinct from the config directory. It MUST use `$CCMUX_STATE_HOME` when set, otherwise default to `~/.ccmux`. The config directory (`$CCMUX_HOME` / `~/.config/ccmux`) MUST NOT be used for the task store, and existing config-dir files MUST NOT be moved into the state home.
-
-#### Scenario: Default state home
-
-- **WHEN** `$CCMUX_STATE_HOME` is unset
-- **THEN** the task store resolves its path under `~/.ccmux`
-
-#### Scenario: Override honored
-
-- **WHEN** `$CCMUX_STATE_HOME` is set to a custom path
-- **THEN** the task store reads and writes under that path
-
-#### Scenario: Config dir untouched
-
-- **WHEN** the task store is written for the first time
-- **THEN** `~/.config/ccmux/state.json` and other config-dir files are left unchanged
-
-### Requirement: Task instance persistence
-
-The system SHALL provide a task-instance store persisted as JSON under the state home, supporting create, list, get-by-id, update-status, patch-fields, and delete. The store directory MUST be created lazily on first write. The patch-fields operation SHALL merge a partial set of instance fields (e.g. `paneId`, `sessionId`, `status`) into an existing instance and refresh `updatedAt`, returning the updated instance or nothing when it does not exist. A `done` task MAY be deleted; deletion MUST remove it from subsequent listings.
-
-#### Scenario: Create then list
-
-- **WHEN** a task instance is created and the store is listed
-- **THEN** the created instance appears in the list with its assigned `id`
-
-#### Scenario: Update status
-
-- **WHEN** an existing instance's status is updated from `pending` to `running`
-- **THEN** a subsequent get-by-id returns the instance with `status: "running"` and a refreshed update timestamp
-
-#### Scenario: Patch link fields
-
-- **WHEN** an existing instance is patched with a `paneId` and `sessionId`
-- **THEN** a subsequent get-by-id returns those fields and a refreshed `updatedAt`, with all other fields preserved
-
-#### Scenario: Patch a missing task
-
-- **WHEN** a patch is applied to an unknown id
-- **THEN** the store returns nothing and persists nothing
-
-#### Scenario: Delete completed task
-
-- **WHEN** a `done` instance is deleted
-- **THEN** it no longer appears in listings and get-by-id returns nothing
-
-#### Scenario: Absent store dir degrades to empty
-
-- **WHEN** the tasks directory does not exist
-- **THEN** listing returns an empty result and no error is thrown
-
-#### Scenario: Malformed task file skipped
-
-- **WHEN** the tasks directory contains one invalid-JSON file alongside valid task files
-- **THEN** listing returns the valid instances and skips the malformed file without throwing
-
-### Requirement: Config-side task surface
-
-The system SHALL extend `Preferences` with `templates` (named `Task` presets), `projects` (per-project overrides), and `defaults` (global task defaults such as `worktree`, `agent`, `target`). These live in the config file (`~/.config/ccmux/ccmux.json`) and are optional; their absence MUST NOT break existing config loading.
-
-#### Scenario: Config without task keys still loads
-
-- **WHEN** an existing `ccmux.json` has none of `templates`, `projects`, or `defaults`
-- **THEN** preferences load successfully with those fields undefined
-
-#### Scenario: Named template retrievable
-
-- **WHEN** a template named `review` is defined under `templates`
-- **THEN** it can be looked up by name and used as a `Task` preset
-
-### Requirement: Default cascade resolution
-
-The system SHALL resolve a concrete `Task` from four ordered layers, later layers overriding earlier ones per-field: global `defaults` → per-project override (`projects[project]`) → named template → creation-time input. Fields absent at every layer remain unset. No per-project or template configuration SHALL be required to create a task (sensible defaults suffice for a POC).
-
-#### Scenario: Creation input wins
-
-- **WHEN** global `defaults.agent` is `claude` and creation input specifies `agent: "codex"`
-- **THEN** the resolved task has `agent: "codex"`
-
-#### Scenario: Project override beats global default
-
-- **WHEN** global `defaults.worktree` is `false` and `projects["myrepo"].worktree` is `true`, and a task is created for `myrepo` with no explicit worktree
-- **THEN** the resolved task has `worktree: true`
-
-#### Scenario: Template fills gaps
-
-- **WHEN** a template sets `target: "split"` and neither global/project defaults nor creation input specify `target`
-- **THEN** the resolved task has `target: "split"`
-
-#### Scenario: No config required
-
-- **WHEN** no `templates`, `projects`, or `defaults` are configured and a task is created with only `project`, `agent`, and `prompt`
-- **THEN** resolution succeeds using built-in defaults for the remaining fields

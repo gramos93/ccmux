@@ -2558,6 +2558,71 @@ describe("task HTTP endpoints", () => {
     expect(res.status).toBe(404);
   });
 
+  it("POST /tasks/{id}/edit edits a pending task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/edit`, { name: "renamed", agent: "codex" }),
+    );
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      task: { name: string; agent: string };
+    };
+    expect(json.task.name).toBe("renamed");
+    expect(json.task.agent).toBe("codex");
+  });
+
+  it("POST /tasks/{id}/edit returns 409 for a non-pending task", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    await internals.handleRequest(
+      jsonPost(`/tasks/${id}/status`, { status: "running" }),
+    );
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/edit`, { name: "nope" }),
+    );
+    expect(res.status).toBe(409);
+  });
+
+  it("POST /tasks/{id}/edit returns 400 for an invalid merge", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/edit`, { target: "bogus" }),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks/{id}/edit returns 404 for a missing id", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks/nope/edit", { name: "x" }),
+    );
+    expect(res.status).toBe(404);
+  });
+
+  it("POST /tasks/{id}/edit with malformed JSON returns 400", async () => {
+    const { internals } = createServer();
+    const id = await createOne(internals);
+    const res = await internals.handleRequest(
+      jsonPost(`/tasks/${id}/edit`, "{ not json"),
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("POST /tasks derives a name from the prompt when none is given", async () => {
+    const { internals } = createServer();
+    const res = await internals.handleRequest(
+      jsonPost("/tasks", {
+        project: tmpdir(),
+        agent: "claude",
+        prompt: "Fix the login bug",
+      }),
+    );
+    const json = (await res.json()) as { task: { name: string } };
+    expect(json.task.name).toBe("Fix the login bug");
+  });
+
   it("POST /tasks/{id}/status updates and broadcasts", async () => {
     const { internals } = createServer();
     const id = await createOne(internals);

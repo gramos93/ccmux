@@ -398,3 +398,43 @@ describe("taskEventToSSE mapper", () => {
     expect(sse).toMatchObject({ type: "task_removed", id: "t1" });
   });
 });
+
+describe("TaskManager.edit", () => {
+  it("edits a pending task and emits updated", async () => {
+    const tm = new TaskManager();
+    const created = await tm.create(body);
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    const res = await tm.edit(created.id, { name: "renamed" });
+    expect(res.ok).toBe(true);
+    if (res.ok) expect(res.task.name).toBe("renamed");
+    expect(events).toHaveLength(1);
+    expect(events[0].kind).toBe("updated");
+  });
+
+  it("rejects editing a non-pending task with not-pending (no event)", async () => {
+    const tm = new TaskManager();
+    const created = await tm.create(body);
+    await tm.updateStatus(created.id, "running");
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    const res = await tm.edit(created.id, { name: "nope" });
+    expect(res).toEqual({ ok: false, reason: "not-pending" });
+    expect(events).toHaveLength(0);
+  });
+
+  it("rejects an invalid merge with invalid", async () => {
+    const tm = new TaskManager();
+    const created = await tm.create(body);
+    const res = await tm.edit(created.id, { target: "bogus" as never });
+    expect(res).toEqual({ ok: false, reason: "invalid" });
+  });
+
+  it("returns not-found for an unknown id", async () => {
+    const tm = new TaskManager();
+    const res = await tm.edit("nope", { name: "x" });
+    expect(res).toEqual({ ok: false, reason: "not-found" });
+  });
+});

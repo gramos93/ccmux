@@ -21,6 +21,7 @@ import type { AttentionTracker } from "./attention-tracker";
 import type { InvocationManager, InvocationEvent } from "./invocation-manager";
 import type { TaskManager, TaskManagerEvent } from "./task-manager";
 import { VALID_TASK_STATUSES, type TaskStatus } from "../lib/task";
+import type { EditableTaskFields } from "../lib/task-store";
 import { readInvocationResult } from "./invocation-results";
 import { INVOCATION_ID_PATTERN } from "../lib/invoke-helpers";
 import { noInvokeModeMessage } from "./invokers/helpers";
@@ -738,6 +739,14 @@ export class DaemonServer {
       const id = path.slice("/tasks/".length, -"/resume".length);
       return await this.handleResumeTask(id, req, corsHeaders);
     }
+    if (
+      path.startsWith("/tasks/") &&
+      path.endsWith("/edit") &&
+      req.method === "POST"
+    ) {
+      const id = path.slice("/tasks/".length, -"/edit".length);
+      return await this.handleEditTask(id, req, corsHeaders);
+    }
     if (path.startsWith("/tasks/") && req.method === "GET") {
       const id = path.slice("/tasks/".length);
       return await this.handleGetTask(id, corsHeaders);
@@ -1007,6 +1016,41 @@ export class DaemonServer {
       );
     }
     return Response.json({ success: true, task }, { headers });
+  }
+
+  private async handleEditTask(
+    id: string,
+    req: Request,
+    headers: Record<string, string>,
+  ): Promise<Response> {
+    let body: Partial<EditableTaskFields>;
+    try {
+      body = (await req.json()) as typeof body;
+    } catch {
+      return Response.json(
+        { success: false, message: "Invalid JSON body" },
+        { status: 400, headers },
+      );
+    }
+    // Emits `updated` on success, which the change listener broadcasts as
+    // `task_updated` (same path as status updates).
+    const result = await this.taskManager.edit(id, body);
+    if (result.ok) {
+      return Response.json({ success: true, task: result.task }, { headers });
+    }
+    const status =
+      result.reason === "not-found"
+        ? 404
+        : result.reason === "not-pending"
+          ? 409
+          : 400;
+    const message =
+      result.reason === "not-found"
+        ? "Task not found"
+        : result.reason === "not-pending"
+          ? "Only a pending task can be edited"
+          : "Invalid edit";
+    return Response.json({ success: false, message }, { status, headers });
   }
 
   private async handleDeleteTask(
