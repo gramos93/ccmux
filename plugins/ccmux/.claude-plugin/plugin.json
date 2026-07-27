@@ -1,6 +1,6 @@
 {
   "name": "ccmux",
-  "description": "Drive the ccmux cross-harness CLI to dispatch work to other AI coding agents (Claude Code, Codex, Cursor, OpenCode, Pi, Gemini) through programmatic ccmux invoke calls. Requires the ccmux CLI on PATH.",
+  "description": "Drive the ccmux cross-harness CLI to run work on other AI coding agents (Claude Code, Codex, Cursor, OpenCode, Pi, Gemini): a `dispatch` skill for programmatic one-shot `ccmux invoke` orchestration, and a `tasks` skill for scaffolding, running, resuming, and tracking persistent `ccmux task` units of work. Requires the ccmux CLI on PATH.",
   "version": "1.0.0",
   "author": {
     "name": "Emmanuel Pilande"
