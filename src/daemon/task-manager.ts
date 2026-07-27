@@ -15,10 +15,12 @@ import { getPreferences } from "../lib/preferences";
 import {
   createTask,
   deleteTask,
+  editTask,
   getTask,
   listTasks,
   patchTask,
   updateTaskStatus,
+  type EditableTaskFields,
 } from "../lib/task-store";
 import {
   resolveTask,
@@ -134,6 +136,30 @@ export class TaskManager extends EventEmitter {
     const task = await updateTaskStatus(id, status);
     if (task) this.safeEmit({ kind: "updated", task });
     return task;
+  }
+
+  /**
+   * Edit a `pending` task's spec fields. Returns a typed result the HTTP layer
+   * maps to a status code: `not-found` (404), `not-pending` (409, a launched
+   * task owns a live pane/session), `invalid` (400, the merged spec fails
+   * validation), or the updated instance (emitting `updated`).
+   */
+  async edit(
+    id: string,
+    patch: Partial<EditableTaskFields>,
+  ): Promise<
+    | { ok: true; task: TaskInstance }
+    | { ok: false; reason: "not-found" | "not-pending" | "invalid" }
+  > {
+    const existing = await getTask(id);
+    if (!existing) return { ok: false, reason: "not-found" };
+    if (existing.status !== "pending") {
+      return { ok: false, reason: "not-pending" };
+    }
+    const result = await editTask(id, patch);
+    if (!result.ok) return result;
+    this.safeEmit({ kind: "updated", task: result.task });
+    return result;
   }
 
   /** Delete an instance (idempotent) and emit `removed`. */

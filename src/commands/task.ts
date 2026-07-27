@@ -106,7 +106,10 @@ export function createTaskCommand(): Command {
       "--target <target>",
       "new-window | split | send-to-existing | background | new-session",
     )
-    .option("--target-ref <pane>", "Pane/session for split/send-to-existing")
+    .option(
+      "--target-ref <ref>",
+      "Pane for split/send-to-existing; explicit session name for new-session",
+    )
     .option("--bg", "Run headless via the invoke subsystem (target=background)")
     .option("--run", "Run the task immediately after creating it")
     .action(

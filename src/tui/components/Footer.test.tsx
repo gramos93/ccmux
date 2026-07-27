@@ -18,6 +18,7 @@ async function renderFooter(props: {
   persistent?: boolean;
   groupBy?: GroupBy;
   reviewable?: boolean;
+  taskView?: boolean;
 }) {
   setup = await testRender(
     () => (
@@ -29,6 +30,7 @@ async function renderFooter(props: {
         persistent={props.persistent}
         groupBy={props.groupBy}
         reviewable={props.reviewable}
+        taskView={props.taskView}
       />
     ),
     { width: 120, height: 4 },
@@ -43,8 +45,18 @@ describe("Footer", () => {
     expect(frame).toContain("j/k");
     expect(frame).toContain("enter");
     expect(frame).toContain("/ search");
+    expect(frame).toContain("t tasks"); // task-board toggle is discoverable
     expect(frame).toContain("? help");
     expect(frame).toContain("q quit");
+  });
+
+  it("renders task-view help text with clone/edit shortcuts", async () => {
+    const frame = await renderFooter({ taskView: true });
+    expect(frame).toContain("c create");
+    expect(frame).toContain("C clone");
+    expect(frame).toContain("e edit");
+    expect(frame).toContain("x delete");
+    expect(frame).toContain("t sessions");
   });
 
   it("renders search mode help text", async () => {

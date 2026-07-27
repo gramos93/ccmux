@@ -6,6 +6,7 @@ import { getTasksDir } from "./config";
 import {
   createTask,
   deleteTask,
+  editTask,
   getTask,
   listTasks,
   patchTask,
@@ -168,5 +169,65 @@ describe("task-store isolation", () => {
     // The store must not create anything under the config home.
     expect(existsSync(join(configHome, "state.json"))).toBe(false);
     expect(existsSync(join(configHome, "session-pids"))).toBe(false);
+  });
+});
+
+describe("task name defaulting", () => {
+  it("derives a name from the prompt when none is given", async () => {
+    const created = await createTask({ ...spec, prompt: "Fix the login bug" });
+    expect(created.name).toBe("Fix the login bug");
+  });
+
+  it("keeps an explicit name", async () => {
+    const created = await createTask({ ...spec, name: "my task" });
+    expect(created.name).toBe("my task");
+  });
+});
+
+describe("editTask", () => {
+  it("merges editable fields, re-validates, and bumps updatedAt", async () => {
+    setNowForTests(() => "2024-01-15T12:00:00Z");
+    const created = await createTask(spec);
+    setNowForTests(() => "2024-01-16T09:00:00Z");
+    const res = await editTask(created.id, { name: "renamed", agent: "codex" });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.task.name).toBe("renamed");
+      expect(res.task.agent).toBe("codex");
+      expect(res.task.updatedAt).toBe("2024-01-16T09:00:00Z");
+      expect(res.task.status).toBe("pending"); // status untouched
+    }
+    expect((await getTask(created.id))?.agent).toBe("codex");
+  });
+
+  it("rejects an invalid merge and leaves the task unchanged", async () => {
+    const created = await createTask(spec);
+    const res = await editTask(created.id, {
+      target: "bogus" as never,
+    });
+    expect(res).toEqual({ ok: false, reason: "invalid" });
+    expect((await getTask(created.id))?.target).toBe("new-window");
+  });
+
+  it("ignores non-spec fields (status, id, link fields)", async () => {
+    const created = await createTask(spec);
+    const res = await editTask(created.id, {
+      status: "running",
+      id: "hacked",
+      paneId: "%1",
+    } as never);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.task.status).toBe("pending");
+      expect(res.task.id).toBe(created.id);
+      expect(res.task.paneId).toBeUndefined();
+    }
+  });
+
+  it("returns not-found for an unknown id", async () => {
+    expect(await editTask("nope", { name: "x" })).toEqual({
+      ok: false,
+      reason: "not-found",
+    });
   });
 });

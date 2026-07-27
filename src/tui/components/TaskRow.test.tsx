@@ -52,6 +52,26 @@ describe("TaskRow", () => {
     expect(frame).toContain("myapp"); // basename of project
   });
 
+  it("leads with the explicit name and keeps the id as a trailing token", async () => {
+    const frame = await render(() => (
+      <TaskRow
+        task={mockTask({ id: "abcdef12-rest", name: "Fix login" })}
+        selected={false}
+      />
+    ));
+    expect(frame).toContain("Fix login"); // display name is shown
+    expect(frame).toContain("abcdef12"); // short id still present (secondary)
+    // The name appears before the id on the row.
+    expect(frame.indexOf("Fix login")).toBeLessThan(frame.indexOf("abcdef12"));
+  });
+
+  it("derives the display name from the prompt when name is absent", async () => {
+    const frame = await render(() => (
+      <TaskRow task={mockTask({ prompt: "Refactor the parser" })} selected={false} />
+    ));
+    expect(frame).toContain("Refactor the parser");
+  });
+
   it("shows the joined session's live activity for a running task", async () => {
     const frame = await render(() => (
       <TaskRow

@@ -21,6 +21,7 @@ async function render(el: () => JSX.Element): Promise<string> {
 
 function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
   return {
+    name: "",
     agent: "claude",
     project: "/Users/test/app",
     target: "new-window",
@@ -47,15 +48,18 @@ function props(
   valid: boolean,
   pickerOpen = false,
   query = "",
+  editing = false,
 ) {
-  const visible = visibleCreateFieldsFor(f);
+  const visible = visibleCreateFieldsFor(f, { editing });
   return {
     form: f,
     options: OPTIONS,
     visibleFields: visible,
     focusedField: pickerOpen ? ("project" as const) : visible[0],
     valid,
+    editing,
     onPromptInput: () => {},
+    onNameInput: () => {},
     projectPickerOpen: pickerOpen,
     projectQuery: query,
     projectChoices: projectPickerChoices(OPTIONS.projects, query),
@@ -76,6 +80,23 @@ describe("TaskCreateModal", () => {
     expect(frame).toContain("Prompt");
     expect(frame).toContain("Run now");
     expect(frame).not.toContain("Background");
+  });
+
+  it("renders the Name field leading the form", async () => {
+    const frame = await render(() => (
+      <TaskCreateModal {...props(form({ name: "Fix login" }), false)} />
+    ));
+    expect(frame).toContain("Name");
+    expect(frame).toContain("Fix login");
+  });
+
+  it("edit mode titles 'Edit task' and hides Run now", async () => {
+    const frame = await render(() => (
+      <TaskCreateModal {...props(form({ name: "N" }), true, false, "", true)} />
+    ));
+    expect(frame).toContain("Edit task");
+    expect(frame).not.toContain("New task");
+    expect(frame).not.toContain("Run now");
   });
 
   it("shows a background target as a Target value", async () => {

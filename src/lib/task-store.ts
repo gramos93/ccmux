@@ -13,11 +13,30 @@ import { unlink } from "fs/promises";
 import { getTasksDir, taskFilePath } from "./config";
 import {
   DEFAULT_TASK_STATUS,
+  deriveTaskName,
   validateNewTask,
   type TaskInstance,
   type TaskSpec,
   type TaskStatus,
 } from "./task";
+
+/** Spec fields editable after creation (everything except identity, status,
+ *  timestamps, and the correlation link fields). */
+export type EditableTaskFields = Pick<
+  TaskSpec,
+  "name" | "prompt" | "agent" | "project" | "target" | "targetRef" | "worktree" | "command"
+>;
+
+const EDITABLE_FIELDS: (keyof EditableTaskFields)[] = [
+  "name",
+  "prompt",
+  "agent",
+  "project",
+  "target",
+  "targetRef",
+  "worktree",
+  "command",
+];
 
 /**
  * Injectable clock for `createdAt`/`updatedAt`. Tests override it via
@@ -78,14 +97,16 @@ async function writeTask(task: TaskInstance): Promise<void> {
 
 /**
  * Create and persist a new task instance from a resolved spec. Validates the
- * spec (rejecting the reserved `new-session` target), assigns an id and
- * timestamps, and starts it in the default status.
+ * spec, assigns an id and timestamps, and starts it in the default status.
+ * When the spec carries no `name`, a friendly default is derived from its
+ * content so a task is never surfaced by raw id.
  */
 export async function createTask(spec: Partial<TaskSpec>): Promise<TaskInstance> {
   const validated = validateNewTask(spec);
   const stamp = now();
   const task: TaskInstance = {
     ...validated,
+    name: validated.name?.trim() || deriveTaskName(validated),
     id: newTaskId(),
     createdAt: stamp,
     updatedAt: stamp,
@@ -93,6 +114,45 @@ export async function createTask(spec: Partial<TaskSpec>): Promise<TaskInstance>
   };
   await writeTask(task);
   return task;
+}
+
+/** Outcome of {@link editTask}: the updated instance, or a typed failure so
+ *  callers (the manager/HTTP layer) can map to the right status code. */
+export type EditTaskResult =
+  | { ok: true; task: TaskInstance }
+  | { ok: false; reason: "not-found" | "invalid" };
+
+/**
+ * Edit an existing task's spec fields. Picks only the {@link EDITABLE_FIELDS}
+ * from `patch`, merges them onto the stored spec, re-validates the merged
+ * result with the same rules applied at creation, bumps `updatedAt`, and
+ * persists. Non-spec fields (id, status, timestamps, link fields) are ignored.
+ * Does NOT gate on lifecycle status — that is the task-api layer's concern.
+ */
+export async function editTask(
+  id: string,
+  patch: Partial<EditableTaskFields>,
+): Promise<EditTaskResult> {
+  const task = await getTask(id);
+  if (!task) return { ok: false, reason: "not-found" };
+
+  const picked: Partial<EditableTaskFields> = {};
+  for (const key of EDITABLE_FIELDS) {
+    if (patch[key] !== undefined) {
+      (picked as Record<string, unknown>)[key] = patch[key];
+    }
+  }
+
+  let validated: TaskSpec;
+  try {
+    validated = validateNewTask({ ...task, ...picked });
+  } catch {
+    return { ok: false, reason: "invalid" };
+  }
+
+  const updated: TaskInstance = { ...task, ...validated, updatedAt: now() };
+  await writeTask(updated);
+  return { ok: true, task: updated };
 }
 
 /**

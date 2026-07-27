@@ -76,14 +76,95 @@ function shellQuote(token: string): string {
 }
 
 /**
+ * Sanitize a raw string into a legal tmux session name: replace the characters
+ * tmux forbids (`.` and `:`) with `-` and trim. Returns "" when nothing usable
+ * remains (callers decide the fallback).
+ */
+export function sanitizeTmuxName(raw: string): string {
+  return raw.replace(/[.:]/g, "-").trim();
+}
+
+/**
  * Derive a tmux session name for a `new-session` task from its project. Uses
- * the path basename, replacing the characters tmux forbids in session names
- * (`.` and `:`) with `-`, and falling back to `task` for an empty result.
+ * the {@link sanitizeTmuxName sanitized} path basename, falling back to `task`
+ * for an empty result.
  */
 export function tmuxSessionName(project: string): string {
   const base = basename(project) || project;
-  const sanitized = base.replace(/[.:]/g, "-").trim();
+  const sanitized = sanitizeTmuxName(base);
   return sanitized.length > 0 ? sanitized : "task";
+}
+
+/** Short, stable, path-derived suffix (FNV-1a 32-bit → 6 hex chars). Pure and
+ *  deterministic — no `Date`/random — so the same project always hashes the
+ *  same way, which is what keeps a disambiguated session stable across runs
+ *  and resume. */
+function pathHash(input: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < input.length; i++) {
+    h ^= input.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0").slice(0, 6);
+}
+
+/**
+ * Disambiguated session name for a project whose primary {@link tmuxSessionName}
+ * is already taken by a *different* project: the sanitized basename plus a
+ * short suffix derived from the full path. Deterministic (same project → same
+ * name every run and on resume).
+ */
+export function disambiguatedSessionName(project: string): string {
+  return `${tmuxSessionName(project)}-${pathHash(project)}`;
+}
+
+/** Existence + ccmux ownership of a tmux session. Existence is probed with
+ *  the exact-match `=name` form (only `has-session` accepts it) so a prefix
+ *  can't false-hit; `show-option` does NOT accept `=`, so it uses the plain
+ *  name — safe because it runs only after `has-session` confirmed the exact
+ *  session exists, and tmux resolves a plain target to the exact match first.
+ *  `owner` is the `@ccmux_project` user option ccmux stamps on sessions it
+ *  creates ("" when unset or unreadable). */
+async function sessionOwner(
+  deps: Pick<TaskLauncherDeps, "runTmux">,
+  name: string,
+): Promise<{ exists: boolean; owner: string }> {
+  const has = await deps.runTmux(["has-session", "-t", `=${name}`]);
+  if (has.code !== 0) return { exists: false, owner: "" };
+  const opt = await deps.runTmux([
+    "show-option",
+    "-v",
+    "-t",
+    name,
+    "@ccmux_project",
+  ]);
+  return { exists: true, owner: opt.code === 0 ? opt.stdout.trim() : "" };
+}
+
+/**
+ * Resolve which tmux session a `new-session` task should use. The primary name
+ * is reused only when it exists AND was created by ccmux for this same project
+ * (its `@ccmux_project` matches). Otherwise — a different project owns it, or
+ * it is unstamped (e.g. a session the user made by hand) — the name falls to a
+ * deterministic path-disambiguated alternative so the task never joins an
+ * unrelated same-named session. Returns the chosen `name` and whether a session
+ * of that name already `exists` (attach vs create-fresh).
+ *
+ * One disambiguation step: a further collision on the hashed alt name would
+ * require two of the user's repos to share both a basename and a 24-bit path
+ * hash — effectively impossible — so the alt is attached to when present.
+ */
+export async function resolveProjectSession(
+  deps: Pick<TaskLauncherDeps, "runTmux">,
+  project: string,
+): Promise<{ name: string; exists: boolean }> {
+  const primary = tmuxSessionName(project);
+  const p = await sessionOwner(deps, primary);
+  if (!p.exists) return { name: primary, exists: false };
+  if (p.owner === project) return { name: primary, exists: true };
+  const alt = disambiguatedSessionName(project);
+  const a = await sessionOwner(deps, alt);
+  return { name: alt, exists: a.exists };
 }
 
 /** Whether an agent can be resumed (claude, or one with a `resumeCommand`). */
@@ -174,18 +255,46 @@ export async function launchTask(
     "#{pane_id}",
   ];
 
-  // Create argv for `new-session`: a detached, project-named session when none
-  // exists, else a new window inside the existing same-named session (attach on
-  // collision — one session per project). Exact-match `=name` so a prefix can't
-  // false-hit. Shared by both the fresh run and the resume path.
-  const newSessionCreateArgv = async (): Promise<string[]> => {
-    const name = tmuxSessionName(task.project);
-    const exists =
-      (await deps.runTmux(["has-session", "-t", `=${name}`])).code === 0;
+  // Launch into a dedicated session. With an explicit `targetRef` name the
+  // user is naming a specific container: create-or-attach to exactly that
+  // session with NO ownership/disambiguation (it may be another project's or a
+  // hand-made session — that's the point). Without one, fall to the
+  // project-derived resolver, which reuses a same-named session only when it
+  // already belongs to this project, else picks a path-disambiguated name so a
+  // foreign same-named session is never hijacked. Either way a freshly created
+  // session is stamped with `@ccmux_project` (fire-and-forget) while attaching
+  // never re-stamps. Shared by the fresh run and resume.
+  const runNewSession = async (
+    launchCommand: string,
+    promptToSend: string | undefined,
+  ): Promise<LaunchResult> => {
+    const explicit = task.targetRef ? sanitizeTmuxName(task.targetRef) : "";
+    const { name, exists } = explicit
+      ? {
+          name: explicit,
+          exists:
+            (await deps.runTmux(["has-session", "-t", `=${explicit}`])).code ===
+            0,
+        }
+      : await resolveProjectSession(deps, task.project);
     const head = exists
       ? ["new-window", "-t", name]
       : ["new-session", "-d", "-s", name];
-    return [...head, "-c", task.project, "-P", "-F", "#{pane_id}"];
+    const argv = [...head, "-c", task.project, "-P", "-F", "#{pane_id}"];
+    const result = await runInPane(argv, launchCommand, promptToSend);
+    if (!exists) {
+      // `set-option` does NOT accept the `=name` exact-match form (only
+      // `has-session` does); use the plain name. The name is exact (just
+      // created), so it targets that session.
+      await deps.runTmux([
+        "set-option",
+        "-t",
+        name,
+        "@ccmux_project",
+        task.project,
+      ]);
+    }
+    return result;
   };
 
   // Shared: create a pane from the given tmux create argv, send the launch
@@ -239,15 +348,11 @@ export async function launchTask(
   // resumes back into its project session (create-or-attach); every other
   // target resumes into a fresh new-window.
   if (opts.resume) {
-    const createArgv =
-      task.target === "new-session"
-        ? await newSessionCreateArgv()
-        : paneCreateArgv("new-window");
-    return runInPane(
-      createArgv,
-      buildLaunchCommand(task, deps, { resume: true }),
-      opts.prompt,
-    );
+    const launchCommand = buildLaunchCommand(task, deps, { resume: true });
+    if (task.target === "new-session") {
+      return runNewSession(launchCommand, opts.prompt);
+    }
+    return runInPane(paneCreateArgv("new-window"), launchCommand, opts.prompt);
   }
 
   if (task.target === "new-window" || task.target === "split") {
@@ -262,11 +367,7 @@ export async function launchTask(
     // Passthrough: the raw command is the whole launch; no separate prompt.
     const promptToSend =
       task.command && task.command.length > 0 ? undefined : task.prompt;
-    return runInPane(
-      await newSessionCreateArgv(),
-      buildLaunchCommand(task, deps),
-      promptToSend,
-    );
+    return runNewSession(buildLaunchCommand(task, deps), promptToSend);
   }
 
   if (task.target === "send-to-existing") {

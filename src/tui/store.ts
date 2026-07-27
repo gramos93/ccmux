@@ -71,7 +71,8 @@ export type ConfirmAction =
   | "kill-all"
   | "kill-group"
   | "restart"
-  | "send-review";
+  | "send-review"
+  | "delete-task";
 
 interface TUIState {
   sessions: EnrichedSession[];
@@ -110,6 +111,9 @@ interface TUIState {
   createModalOpen: boolean;
   createForm: CreateFormState;
   createOptions: CreateOptions;
+  /** The task being edited when the modal is in edit mode; null = create/clone
+   *  (submit posts to /tasks). Non-null routes submit to /tasks/{id}/edit. */
+  editingTaskId: string | null;
   /** Index into the modal's visible fields of the currently-focused field. */
   createFocusIndex: number;
   /** Searchable project-picker sub-overlay (opened from the Project field). */
@@ -120,6 +124,7 @@ interface TUIState {
 
 /** Empty form/options used as the store's initial (closed-modal) value. */
 const EMPTY_CREATE_FORM: CreateFormState = {
+  name: "",
   agent: "",
   project: "",
   target: "new-window",
@@ -412,6 +417,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     createModalOpen: false,
     createForm: { ...EMPTY_CREATE_FORM },
     createOptions: { ...EMPTY_CREATE_OPTIONS },
+    editingTaskId: null,
     createFocusIndex: 0,
     projectPickerOpen: false,
     projectQuery: "",
@@ -695,11 +701,27 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
   const selectedTaskFlatIndex = createMemo(() =>
     taskFlatIndex(taskFlatItems(), state.selectedTaskId),
   );
+  // The selected task instance driving the board preview: the row matching
+  // `selectedTaskId`, else the first task (so the pane is never blank while
+  // tasks exist). Mirrors `moveTaskSelection`, which snaps a null selection to
+  // the first row on the first move.
+  const selectedTask = createMemo((): TaskInstance | null => {
+    if (state.selectedTaskId) {
+      const byId = state.tasks.find((t) => t.id === state.selectedTaskId);
+      if (byId) return byId;
+    }
+    const first = taskFlatItems().find(
+      (i): i is Extract<TaskFlatItem, { type: "task" }> => i.type === "task",
+    );
+    return first ? first.task : null;
+  });
 
   // Create-modal: the visible (focusable) fields for the current form, the
   // currently-focused one (clamped), and whether the form can be submitted.
   const visibleCreateFields = createMemo((): CreateField[] =>
-    visibleCreateFieldsFor(state.createForm),
+    visibleCreateFieldsFor(state.createForm, {
+      editing: state.editingTaskId !== null,
+    }),
   );
   const focusedCreateField = createMemo((): CreateField => {
     const fields = visibleCreateFields();
@@ -1002,6 +1024,31 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       batch(() => {
         setState("createForm", form);
         setState("createOptions", options);
+        setState("editingTaskId", null);
+        setState("createFocusIndex", 0);
+        setState("createModalOpen", true);
+      });
+    },
+
+    /** Open the modal in edit mode, pre-filled from an existing task. Submit
+     *  will route to the edit endpoint (run-now is hidden while editing). */
+    openEditModal(form: CreateFormState, options: CreateOptions, id: string) {
+      batch(() => {
+        setState("createForm", form);
+        setState("createOptions", options);
+        setState("editingTaskId", id);
+        setState("createFocusIndex", 0);
+        setState("createModalOpen", true);
+      });
+    },
+
+    /** Open the create modal pre-filled from an existing task (a NEW task, not
+     *  an edit) — "new like this". */
+    openCloneModal(form: CreateFormState, options: CreateOptions) {
+      batch(() => {
+        setState("createForm", form);
+        setState("createOptions", options);
+        setState("editingTaskId", null);
         setState("createFocusIndex", 0);
         setState("createModalOpen", true);
       });
@@ -1013,12 +1060,14 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
         setState("createModalOpen", false);
         setState("createForm", { ...EMPTY_CREATE_FORM });
         setState("createOptions", { ...EMPTY_CREATE_OPTIONS });
+        setState("editingTaskId", null);
         setState("createFocusIndex", 0);
         setState("projectPickerOpen", false);
         setState("projectQuery", "");
         setState("projectPickerIndex", 0);
       });
     },
+
 
     /** Set a single form field (text entry for prompt; direct writes). Setting
      *  `project` drops a target-ref that no longer belongs to the new project. */
@@ -1588,6 +1637,7 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
     pinnedGroups,
     taskFlatItems,
     selectedTaskFlatIndex,
+    selectedTask,
     visibleCreateFields,
     focusedCreateField,
     createFormValid,

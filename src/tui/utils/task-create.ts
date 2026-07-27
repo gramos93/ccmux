@@ -28,6 +28,7 @@ export function targetNeedsRef(target: TaskTarget): boolean {
 /** A focusable field in the create form, in display order (target-ref is
  *  conditionally present — see {@link visibleCreateFieldsFor}). */
 export type CreateField =
+  | "name"
   | "agent"
   | "project"
   | "target"
@@ -38,6 +39,8 @@ export type CreateField =
 
 /** The editable state of the create form. */
 export interface CreateFormState {
+  /** Human-readable task name; "" lets the daemon derive one from the prompt. */
+  name: string;
   agent: string;
   project: string;
   /** One of {@link TARGET_CYCLE}, including the headless `background`. */
@@ -172,6 +175,7 @@ export function buildInitialForm(
   );
 
   return {
+    name: resolved.name ?? "",
     agent: resolved.agent ?? options.agents[0] ?? "claude",
     project: defaultProject || options.projects[0] || "",
     target: resolved.target ?? DEFAULT_TASK_TARGET,
@@ -182,12 +186,17 @@ export function buildInitialForm(
   };
 }
 
-/** The visible, focusable fields for a form state (target-ref only shows for
- *  the pane split/send-to-existing placements). */
-export function visibleCreateFieldsFor(form: CreateFormState): CreateField[] {
-  const fields: CreateField[] = ["agent", "project", "target"];
+/** The visible, focusable fields for a form state. `name` leads; `target-ref`
+ *  only shows for the pane split/send-to-existing placements; `runNow` is
+ *  hidden when editing (an edit never launches). */
+export function visibleCreateFieldsFor(
+  form: CreateFormState,
+  opts: { editing?: boolean } = {},
+): CreateField[] {
+  const fields: CreateField[] = ["name", "agent", "project", "target"];
   if (targetNeedsRef(form.target)) fields.push("targetRef");
-  fields.push("template", "prompt", "runNow");
+  fields.push("template", "prompt");
+  if (!opts.editing) fields.push("runNow");
   return fields;
 }
 
@@ -214,6 +223,7 @@ export function sessionsForProject(
  *  omitted so the daemon's default cascade still applies. */
 export interface CreateBody {
   project: string;
+  name?: string;
   agent?: string;
   prompt?: string;
   template?: string;
@@ -221,9 +231,11 @@ export interface CreateBody {
   targetRef?: string;
 }
 
-/** Shape a create form into the `POST /tasks` body (pure). */
+/** Shape a create form into the `POST /tasks` body (pure). `name` is sent only
+ *  when non-blank so the daemon derives a default otherwise. */
 export function buildCreateBody(form: CreateFormState): CreateBody {
   const body: CreateBody = { project: form.project, target: form.target };
+  if (form.name.trim()) body.name = form.name.trim();
   if (form.agent) body.agent = form.agent;
   if (form.prompt.trim()) body.prompt = form.prompt;
   if (form.template) body.template = form.template;
@@ -231,6 +243,59 @@ export function buildCreateBody(form: CreateFormState): CreateBody {
     body.targetRef = form.targetRef;
   }
   return body;
+}
+
+/** The editable-field subset a form submits to `POST /tasks/{id}/edit`. */
+export interface EditBody {
+  name?: string;
+  prompt?: string;
+  agent?: string;
+  project: string;
+  target: TaskTarget;
+  targetRef?: string;
+}
+
+/** Shape a form into the `POST /tasks/{id}/edit` body (pure). Sends the
+ *  editable spec fields; `name` is sent as-is (blank clears it, so the daemon
+ *  re-derives). `targetRef` only for the pane placements that use it. */
+export function buildEditBody(form: CreateFormState): EditBody {
+  const body: EditBody = {
+    name: form.name.trim(),
+    project: form.project,
+    target: form.target,
+    agent: form.agent,
+    prompt: form.prompt,
+  };
+  if (targetNeedsRef(form.target) && form.targetRef) {
+    body.targetRef = form.targetRef;
+  }
+  return body;
+}
+
+/** Pre-fill a create/edit form from an existing task instance. Copies only
+ *  spec fields (so a clone starts fresh — no id/status/link fields) and
+ *  defaults run-now off (you review before launching). */
+export function formFromTask(
+  task: {
+    name?: string;
+    prompt: string;
+    agent: string;
+    project: string;
+    target: TaskTarget;
+    targetRef?: string;
+  },
+  options: CreateOptions,
+): CreateFormState {
+  return {
+    name: task.name ?? "",
+    agent: task.agent || options.agents[0] || "claude",
+    project: task.project,
+    target: task.target,
+    targetRef: task.targetRef ?? "",
+    template: "",
+    prompt: task.prompt,
+    runNow: false,
+  };
 }
 
 /** What activating (Enter on) a task row should do. `run` starts a pending

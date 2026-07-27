@@ -16,6 +16,7 @@ import {
 } from "@opentui/solid";
 import type { KeyEvent, MouseEvent, ScrollBoxRenderable } from "@opentui/core";
 import type { EnrichedSession } from "../types/session";
+import { taskDisplayName, type TaskInstance } from "../lib/task";
 import { createTUIStore, TickContext } from "./store";
 import { killActionPath, restartActionPath } from "./utils/invoke-actions";
 import {
@@ -51,11 +52,14 @@ import { Header } from "./components/Header";
 import { Footer } from "./components/Footer";
 import { SessionList } from "./components/SessionList";
 import { TaskList } from "./components/TaskList";
+import { TaskDetail } from "./components/TaskDetail";
 import { TaskCreateModal } from "./components/TaskCreateModal";
 import {
   buildCreateBody,
   buildCreateOptions,
+  buildEditBody,
   buildInitialForm,
+  formFromTask,
   resolveTaskActivation,
 } from "./utils/task-create";
 import { SearchInput } from "./components/SearchInput";
@@ -577,9 +581,10 @@ export function App(props: AppProps) {
 
   /** Delete the selected task. The task_removed broadcast drops the row. */
   function deleteSelectedTask() {
-    const id = store.state.selectedTaskId;
+    const id = store.selectedTask()?.id ?? store.state.selectedTaskId;
     if (!id) return;
-    fetch(`${getDaemonUrl()}/tasks/${id}`, { method: "DELETE" }).catch(() => {});
+    // Reuse the shared confirmation dialog (same as session kill/restart).
+    store.actions.showConfirmDialog(id, "delete-task");
   }
 
   /** Enter on a task row: run a pending task, resume a stopped task, or jump
@@ -619,12 +624,35 @@ export function App(props: AppProps) {
     store.actions.openCreateModal(form, options);
   }
 
-  /** Submit the create form: POST /tasks (unset fields omitted so the daemon
-   *  cascade still applies), then run it when run-now is set. The modal closes
-   *  on a successful create; the row arrives via the task_created broadcast. */
+  /** Submit the modal. In edit mode (editingTaskId set) → POST
+   *  /tasks/{id}/edit with the editable subset; a rejected edit keeps the form
+   *  open with a toast. Otherwise → POST /tasks (unset fields omitted so the
+   *  daemon cascade applies), then run it when run-now is set. The modal closes
+   *  on success; the row arrives/updates via the task broadcast. */
   async function submitCreate() {
     if (!store.createFormValid()) {
       store.actions.showToast("Prompt required (or pick a template)");
+      return;
+    }
+    const editId = store.state.editingTaskId;
+    if (editId) {
+      try {
+        const res = await postJson(
+          `/tasks/${editId}/edit`,
+          buildEditBody(store.state.createForm),
+        );
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as {
+            message?: string;
+          };
+          // Keep the modal open so the edit isn't lost (e.g. 409 no-longer-pending).
+          store.actions.showToast(`Edit failed: ${data.message ?? res.status}`);
+          return;
+        }
+        store.actions.closeCreateModal();
+      } catch {
+        store.actions.showToast("Edit failed");
+      }
       return;
     }
     const body = buildCreateBody(store.state.createForm);
@@ -649,6 +677,38 @@ export function App(props: AppProps) {
       store.actions.showToast("Create failed");
     }
   }
+
+  /** Build create options + a form pre-filled from an existing task, for edit
+   *  and clone. */
+  function optionsAndFormFromTask(task: TaskInstance): {
+    options: ReturnType<typeof buildCreateOptions>;
+    form: ReturnType<typeof formFromTask>;
+  } {
+    const liveSessions = store.state.sessions.filter((s) => s.tmuxPane);
+    const options = buildCreateOptions(liveSessions, task.project);
+    return { options, form: formFromTask(task, options) };
+  }
+
+  /** Open the modal to edit the selected task (pending only). */
+  function openEditModal() {
+    const task = store.selectedTask();
+    if (!task) return;
+    if (task.status !== "pending") {
+      store.actions.showToast("Only a pending task can be edited");
+      return;
+    }
+    const { options, form } = optionsAndFormFromTask(task);
+    store.actions.openEditModal(form, options, task.id);
+  }
+
+  /** Open the create modal pre-filled from the selected task ("new like this"). */
+  function openCloneModal() {
+    const task = store.selectedTask();
+    if (!task) return;
+    const { options, form } = optionsAndFormFromTask(task);
+    store.actions.openCloneModal(form, options);
+  }
+
 
   /** Quit the picker (or close the sidebar pane), matching the `q` case. */
   function quitApp() {
@@ -683,6 +743,11 @@ export function App(props: AppProps) {
         ? restartActionPath(session)
         : `/sessions/${sessionId}/restart`;
       fetch(`${getDaemonUrl()}${path}`, { method: "POST" });
+    } else if (action === "delete-task" && sessionId) {
+      // `confirmSessionId` carries the task id for a task delete.
+      fetch(`${getDaemonUrl()}/tasks/${sessionId}`, { method: "DELETE" }).catch(
+        () => {},
+      );
     } else if (sessionId) {
       killOrCancelSession(sessionId);
     }
@@ -919,6 +984,15 @@ export function App(props: AppProps) {
     return store.state.sessions.find((s) => s.id === id) || null;
   };
 
+  /** The live session backing the selected board task's preview: only for a
+   *  running task with a resolvable linked session (else the board shows the
+   *  static TaskDetail card). */
+  const selectedTaskLiveSession = createMemo(() => {
+    const task = store.selectedTask();
+    if (!task || task.status !== "running" || !task.sessionId) return null;
+    return getSessionById(task.sessionId);
+  });
+
   /** Extract group context from the selected item for group move operations */
   const getGroupMoveContext = (item: FlatItem | null) => {
     if (!item?.groupKey) return null;
@@ -987,7 +1061,7 @@ export function App(props: AppProps) {
     // The prompt field is a text input: let it receive typed chars (including
     // h/l and left/right for cursor movement) — only the nav/submit/cancel
     // keys above are intercepted for it.
-    if (field === "prompt") return;
+    if (field === "prompt" || field === "name") return;
     // Space on the Project field opens the searchable picker (rather than
     // cycling), while left/right still quick-cycle the known projects.
     if ((key === "space" || key === " ") && field === "project") {
@@ -1125,14 +1199,16 @@ export function App(props: AppProps) {
       return;
     }
 
-    // `c` opens the create-task modal from either view.
-    if (key === "c") {
+    // `c` opens the create-task modal from either view. Shift+C is the board's
+    // clone action (handled in the task branch), so don't swallow it here.
+    if (key === "c" && !event.shift) {
       openCreateModal();
       event.preventDefault();
       return;
     }
 
-    // Task board: its own key set, isolated from session nav.
+    // Task board: its own key set, isolated from session nav. (A pending
+    // delete confirmation is handled by the shared confirmMode branch above.)
     if (store.state.view === "tasks") {
       if (key === "escape") {
         store.actions.toggleView();
@@ -1146,10 +1222,30 @@ export function App(props: AppProps) {
         activateSelectedTask();
       } else if (key === "r") {
         runOrResumeSelectedTask();
+      } else if (key === "e") {
+        openEditModal();
+      } else if (key === "C" || (key === "c" && event.shift)) {
+        openCloneModal();
       } else if (key === "x") {
         deleteSelectedTask();
       } else if (key === "b") {
         store.actions.cycleTaskGroupBy();
+      } else if (key === "P" || (key === "p" && event.shift)) {
+        // Same gesture as the session view's preview toggle.
+        store.actions.togglePreview();
+      } else if (
+        (key === "d" || key === "u") &&
+        event.ctrl &&
+        previewScrollbox &&
+        store.state.showPreview
+      ) {
+        // Scroll the board preview pane (running task's live pane or the
+        // TaskDetail card), mirroring the session view's ctrl-d/ctrl-u.
+        const halfPage = Math.floor(
+          (previewScrollbox.viewport?.height ?? 10) / 2,
+        );
+        const delta = key === "d" ? halfPage : -halfPage;
+        previewScrollbox.scrollTo(previewScrollbox.scrollTop + delta);
       }
       event.preventDefault();
       return;
@@ -1539,6 +1635,34 @@ export function App(props: AppProps) {
               getSessionById={getSessionById}
               iconStyle={store.state.iconStyle}
             />
+            <Show when={!props.sidebar && store.state.showPreview}>
+              <Show
+                when={selectedTaskLiveSession()}
+                fallback={
+                  <Show when={store.selectedTask()}>
+                    {(task: () => TaskInstance) => (
+                      <TaskDetail
+                        task={task()}
+                        width={store.state.previewWidth}
+                        focused={store.state.previewFocused}
+                        onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                      />
+                    )}
+                  </Show>
+                }
+              >
+                {(session: () => EnrichedSession) => (
+                  <Preview
+                    session={session()}
+                    onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                    iconStyle={store.state.iconStyle}
+                    width={store.state.previewWidth}
+                    focused={store.state.previewFocused}
+                    refreshKey={previewRefreshKey()}
+                  />
+                )}
+              </Show>
+            </Show>
           </Show>
         </box>
 
@@ -1574,7 +1698,15 @@ export function App(props: AppProps) {
                   ? store.state.confirmSessionIds.length
                   : store.filteredSessions().length
             }
-            groupLabel={store.selectedGroupHeader()?.label}
+            groupLabel={
+              store.state.confirmAction === "delete-task"
+                ? taskDisplayName(
+                    store.state.tasks.find(
+                      (t) => t.id === store.state.confirmSessionId,
+                    ) ?? { prompt: "" },
+                  )
+                : store.selectedGroupHeader()?.label
+            }
             onConfirm={confirmDialogAction}
             onCancel={() => {
               pendingReviewNotes = null;
@@ -1612,7 +1744,9 @@ export function App(props: AppProps) {
             visibleFields={store.visibleCreateFields()}
             focusedField={store.focusedCreateField()}
             valid={store.createFormValid()}
+            editing={store.state.editingTaskId !== null}
             onPromptInput={(v) => store.actions.setCreateField("prompt", v)}
+            onNameInput={(v) => store.actions.setCreateField("name", v)}
             projectPickerOpen={store.state.projectPickerOpen}
             projectQuery={store.state.projectQuery}
             projectChoices={store.projectPickerChoices()}

@@ -27,17 +27,17 @@ The TUI store SHALL hold a `tasks` collection kept in sync with the daemon over 
 
 ### Requirement: Task board view
 
-The TUI SHALL provide a task board view, toggled from the session view by a keybind, that lists the store's tasks. Each row SHALL show the task's short id, its lifecycle status (distinctly colored per `pending`/`running`/`stopped`/`done`/`failed`), its agent, and its project. For a `running` task with a linked session, the row SHALL also show that session's live activity (working/waiting/idle) via a read-time join on `sessionId` (never persisted onto the task). An empty task list SHALL render a clear empty state.
+The TUI SHALL provide a task board view, toggled from the session view by a keybind, that lists the store's tasks. Each row SHALL lead with the task's **display name** — its `name`, or a name derived from its content when `name` is absent — followed by its lifecycle status (distinctly colored per `pending`/`running`/`stopped`/`done`/`failed`), its agent, and its project; the task's short id MAY appear as a secondary, de-emphasized token rather than the leading identifier. For a `running` task with a linked session, the row SHALL also show that session's live activity (working/waiting/idle) via a read-time join on `sessionId` (never persisted onto the task). An empty task list SHALL render a clear empty state.
 
 #### Scenario: Toggle to the board
 
 - **WHEN** the user presses the task-view keybind
 - **THEN** the middle region renders the task board instead of the session list, and the keybind toggles back
 
-#### Scenario: Rows show status, agent, and project
+#### Scenario: Rows lead with the display name
 
 - **WHEN** the board renders a task
-- **THEN** the row shows its short id, a status-colored badge, its agent, and its project
+- **THEN** the row leads with the task's display name (its `name`, or a derived fallback), followed by a status-colored badge, its agent, and its project, with the short id shown only as a de-emphasized secondary token
 
 #### Scenario: Running task borrows live activity
 
@@ -49,9 +49,38 @@ The TUI SHALL provide a task board view, toggled from the session view by a keyb
 - **WHEN** there are no tasks
 - **THEN** the board shows an empty state rather than a blank region
 
+### Requirement: Task board preview pane
+
+The task board SHALL present a preview pane on the right that reflects the selected task, mirroring the session view's list-plus-preview layout. The pane SHALL be shown only when the session view's preview is enabled (the shared `showPreview` state) and not in sidebar mode, and SHALL be sized by the shared `previewWidth`. The board SHALL resolve a selected task (defaulting to the first task when none is explicitly selected) so the pane is never blank while tasks exist. For a `running` task linked to a live session, the pane SHALL render that session's live pane capture using the same preview component as the session view. For any other task — `pending`, `stopped`, `done`, `failed`, or a `running` task with no linked session — the pane SHALL render a task-detail card (no tmux capture) showing the task's display name, status, agent, project, target (and, for `new-session`, the explicit or project-derived session name), the full prompt in a scrollable region, worktree intent, created/updated timestamps, the linked session id when present, and a failure hint for a `failed` task. The board SHALL reuse the session view's preview toggle and preview-focus/scroll keybinds and state (`showPreview`, `previewWidth`, `previewFocused`) rather than introducing a separate preview model.
+
+#### Scenario: Running linked task shows its live pane
+
+- **WHEN** the selected board task is `running` and linked to a live session, with the preview enabled
+- **THEN** the right pane renders that session's live pane capture (the same preview component the session view uses)
+
+#### Scenario: Paneless task shows a detail card
+
+- **WHEN** the selected board task is `pending`, `stopped`, `done`, `failed`, or `running` without a linked session
+- **THEN** the right pane renders a task-detail card (name, status, agent, project, target/session name, the scrollable prompt, worktree, timestamps, linked session id, and a failure hint for `failed`) with no tmux capture
+
+#### Scenario: Selection drives the pane
+
+- **WHEN** the user moves the selection between task rows
+- **THEN** the preview pane updates to reflect the newly selected task
+
+#### Scenario: Preview hidden when disabled or in sidebar
+
+- **WHEN** the shared preview is toggled off, or the board is rendered in sidebar mode
+- **THEN** no preview pane is shown and the list uses the full width
+
+#### Scenario: Default selection when entering the board
+
+- **WHEN** the board is shown and no task is explicitly selected
+- **THEN** the first task is treated as selected and its preview is shown
+
 ### Requirement: Task board row actions
 
-From the task board the user SHALL be able to activate a row, explicitly run/resume the actionable statuses, and delete any task, each dispatched to the existing daemon endpoints. Activating (enter) a `pending` task SHALL run it; activating a `stopped` task SHALL resume it; activating a `running` task linked to a session SHALL jump to that session's pane (mirroring the session view's activate). The explicit run/resume action SHALL start a `pending` task (run) and re-attach a `stopped` task (resume), and SHALL do nothing for other statuses. The board SHALL NOT optimistically mutate the store; the resulting `task_updated`/`task_removed` broadcast updates the row.
+From the task board the user SHALL be able to activate a row, explicitly run/resume the actionable statuses, edit a `pending` task, clone a task, and delete a task (behind a confirmation), each dispatched to the existing daemon endpoints. Activating (enter) a `pending` task SHALL run it; activating a `stopped` task SHALL resume it; activating a `running` task linked to a session SHALL jump to that session's pane (mirroring the session view's activate). The explicit run/resume action SHALL start a `pending` task (run) and re-attach a `stopped` task (resume), and SHALL do nothing for other statuses. Deleting a task SHALL first require an explicit confirmation naming the task; only on confirmation SHALL the TUI dispatch `DELETE` to the daemon, and cancelling SHALL leave the task untouched. The board SHALL NOT optimistically mutate the store; the resulting `task_updated`/`task_removed` broadcast updates the row.
 
 #### Scenario: Run a pending task from the board
 
@@ -68,10 +97,15 @@ From the task board the user SHALL be able to activate a row, explicitly run/res
 - **WHEN** the user activates (enter) a `running` row linked to a session
 - **THEN** the TUI jumps to that session's tmux pane
 
-#### Scenario: Delete a task from the board
+#### Scenario: Delete a task requires confirmation
 
 - **WHEN** the user triggers delete on a row
-- **THEN** the TUI deletes the task via the daemon, and the row disappears when the broadcast arrives
+- **THEN** a confirmation naming the task is shown, and the task is deleted (via the daemon) only after the user confirms, the row disappearing when the `task_removed` broadcast arrives
+
+#### Scenario: Cancel a delete
+
+- **WHEN** the delete confirmation is shown and the user cancels
+- **THEN** no delete is dispatched and the task remains
 
 #### Scenario: Run/resume applies only to actionable statuses
 
@@ -103,7 +137,7 @@ Each task row SHALL indicate its execution kind — background (headless invoke)
 
 ### Requirement: Task creation from the board
 
-The task board SHALL provide a create action, opened by a keybind, that presents a single modal form for composing a new task and dispatches it to the existing `POST /tasks` endpoint. The form SHALL offer: agent, project, target, target-ref, template, prompt, and a run-now toggle. The `target` field SHALL be a single mutually-exclusive selector cycling every placement — `new-window`, `split`, `send-to-existing`, the headless `background`, and `new-session` — so a task has exactly one placement and background is not a separate co-selectable toggle. Field choices SHALL be sourced from local configuration — agents from the built-in registry plus config `agents`, templates from config `templates`, projects from config `projects` combined with the working directories of live sessions, the projects of existing tasks, and the immediate subdirectories of the configured project root(s) (`projectsRoot`, a one-level scan) — and the form's initial values SHALL be pre-filled from the same default cascade the daemon resolves (`defaults → projects[project] → templates[template]`). The project field SHALL additionally offer a searchable picker (filter-as-you-type over the known projects) with an escape hatch to enter an arbitrary path not yet known. The target-ref field SHALL be offered only for `split` and `send-to-existing` targets, and SHALL pick from the live sessions belonging to the selected project (the value sent being the session's tmux pane); changing the project SHALL drop a target-ref that no longer belongs to it. `new-window`, `background`, and `new-session` do not use a target-ref. On submit the TUI SHALL POST the entered fields to the daemon (omitting unset fields so the daemon's resolver still applies) and, when run-now is set, SHALL additionally run the created task. The form SHALL NOT be submittable without a prompt unless a selected template supplies one, nor when a `split`/`send-to-existing` target has no resolved pane. Creation SHALL NOT optimistically mutate the store; the `task_created` (and, for run-now, `task_updated`) broadcast SHALL add and update the row. The create action SHALL leave the daemon's task endpoints unchanged (no new endpoint).
+The task board SHALL provide a create action, opened by a keybind, that presents a single modal form for composing a new task and dispatches it to the existing `POST /tasks` endpoint. The form SHALL offer: name, agent, project, target, target-ref, template, prompt, and a run-now toggle. The `name` field is optional — when left blank, the daemon derives a name from the prompt (per the task-store capability); when provided it is sent with the create. The `target` field SHALL be a single mutually-exclusive selector cycling every placement — `new-window`, `split`, `send-to-existing`, the headless `background`, and `new-session` — so a task has exactly one placement and background is not a separate co-selectable toggle. Field choices SHALL be sourced from local configuration — agents from the built-in registry plus config `agents`, templates from config `templates`, projects from config `projects` combined with the working directories of live sessions, the projects of existing tasks, and the immediate subdirectories of the configured project root(s) (`projectsRoot`, a one-level scan) — and the form's initial values SHALL be pre-filled from the same default cascade the daemon resolves (`defaults → projects[project] → templates[template]`). The project field SHALL additionally offer a searchable picker (filter-as-you-type over the known projects) with an escape hatch to enter an arbitrary path not yet known. The target-ref field SHALL be offered only for `split` and `send-to-existing` targets, and SHALL pick from the live sessions belonging to the selected project (the value sent being the session's tmux pane); changing the project SHALL drop a target-ref that no longer belongs to it. `new-window`, `background`, and `new-session` do not use a target-ref. On submit the TUI SHALL POST the entered fields to the daemon (omitting unset fields so the daemon's resolver still applies) and, when run-now is set, SHALL additionally run the created task. The form SHALL NOT be submittable without a prompt unless a selected template supplies one, nor when a `split`/`send-to-existing` target has no resolved pane. Creation SHALL NOT optimistically mutate the store; the `task_created` (and, for run-now, `task_updated`) broadcast SHALL add and update the row. The same modal SHALL be reused to edit a pending task and to clone an existing task (see the edit and clone requirements). The create action SHALL leave the daemon's task endpoints unchanged (no new endpoint).
 
 #### Scenario: Open the create form
 
@@ -114,6 +148,11 @@ The task board SHALL provide a create action, opened by a keybind, that presents
 
 - **WHEN** the user fills the form and submits
 - **THEN** the TUI POSTs the entered fields to `/tasks`, the modal closes, and the new row appears when the `task_created` broadcast arrives
+
+#### Scenario: Name field offered and optional
+
+- **WHEN** the create form is open
+- **THEN** it offers a `name` text field; submitting with it blank omits `name` (the daemon derives one), and submitting with it set sends that `name`
 
 #### Scenario: Create and run immediately
 
@@ -169,3 +208,41 @@ The task board SHALL provide a create action, opened by a keybind, that presents
 
 - **WHEN** the user cancels the form
 - **THEN** the modal closes and no task is created
+
+### Requirement: Edit a pending task from the board
+
+The task board SHALL provide an edit action, on a keybind, that opens the create/edit modal pre-filled from the selected task and, on submit, dispatches `POST /tasks/{id}/edit` (the edit endpoint) rather than creating a new task. Editing SHALL be offered only for a `pending` task; triggering it on a non-`pending` task SHALL surface a message and open nothing. In edit mode the run-now toggle SHALL be hidden (editing never launches) and the modal SHALL indicate it is editing. On a successful edit the modal SHALL close and the row SHALL update when the `task_updated` broadcast arrives (no optimistic mutation); an edit rejected by the daemon (e.g. the task is no longer `pending`, or the merged fields are invalid) SHALL surface a message without discarding the form.
+
+#### Scenario: Edit a pending task
+
+- **WHEN** the user triggers edit on a `pending` row, changes fields, and submits
+- **THEN** the TUI POSTs to `/tasks/{id}/edit`, the modal closes, and the row updates when the `task_updated` broadcast arrives
+
+#### Scenario: Edit offered only for pending tasks
+
+- **WHEN** the user triggers edit on a `running`, `stopped`, `done`, or `failed` row
+- **THEN** a message is shown and no edit modal opens
+
+#### Scenario: Run-now hidden while editing
+
+- **WHEN** the edit modal is open
+- **THEN** the run-now toggle is not shown (editing does not launch the task)
+
+#### Scenario: Rejected edit keeps the form
+
+- **WHEN** a submitted edit is rejected by the daemon
+- **THEN** a message is shown and the modal stays open with the entered values
+
+### Requirement: Clone a task from the board
+
+The task board SHALL provide a clone action, on a keybind, that opens the create modal pre-filled from the selected task's fields (name, prompt, agent, project, target, and target-ref) as a **new** task — not an edit. Submitting SHALL create a new task via `POST /tasks` (a fresh id, no correlation/link fields copied). The clone SHALL NOT run automatically unless the user sets run-now.
+
+#### Scenario: Clone an existing task
+
+- **WHEN** the user triggers clone on any row
+- **THEN** the create modal opens pre-filled from that task's fields, and submitting creates a new task via `POST /tasks`
+
+#### Scenario: Clone does not copy link fields
+
+- **WHEN** a running, session-linked task is cloned
+- **THEN** the new task carries only spec fields (no `sessionId`/`paneId`/`nativeSessionId`) and starts `pending`

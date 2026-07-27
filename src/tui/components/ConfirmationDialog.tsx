@@ -27,6 +27,8 @@ export const ConfirmationDialog: Component<ConfirmationDialogProps> = (
         return "Restart Session?";
       case "send-review":
         return "Send review comments";
+      case "delete-task":
+        return "Delete Task?";
       default:
         return "Kill Session?";
     }
@@ -46,6 +48,9 @@ export const ConfirmationDialog: Component<ConfirmationDialogProps> = (
     if (props.action === "kill-all") {
       const n = props.sessionCount ?? 0;
       return `(${n} session${n !== 1 ? "s" : ""})`;
+    }
+    if (props.action === "delete-task") {
+      return props.groupLabel || "task";
     }
     if (!props.session) return "Unknown session";
     return props.session.project || props.session.cwd || props.session.id;
