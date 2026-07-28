@@ -584,7 +584,12 @@ export function App(props: AppProps) {
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task) return;
-    const action = resolveTaskActivation(task);
+    const action = resolveTaskActivation(
+      task,
+      task.sessionId ? getSessionById(task.sessionId) : null,
+    );
+    // `r` handles only run/resume; a `jump` (live done/running row) is a no-op
+    // here — reach that pane via Enter (activate).
     if (action.kind === "run") runTaskById(action.id);
     else if (action.kind === "resume") resumeSelectedTask();
   }
@@ -605,7 +610,10 @@ export function App(props: AppProps) {
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task) return;
-    const action = resolveTaskActivation(task);
+    const action = resolveTaskActivation(
+      task,
+      task.sessionId ? getSessionById(task.sessionId) : null,
+    );
     if (action.kind === "run") {
       runTaskById(action.id);
     } else if (action.kind === "resume") {

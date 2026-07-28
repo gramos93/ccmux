@@ -217,9 +217,10 @@ async function capture(deps: TaskLauncherDeps, paneId: string): Promise<string> 
 }
 
 /** Options for {@link launchTask}. `resume` launches the agent's resume
- *  command (into the task's project session for a `new-session` task, else a
- *  fresh new-window); `prompt` (when set) is submitted after the agent is
- *  ready (a follow-up turn). */
+ *  command into the task's project-named session (create-or-attach) — the
+ *  original pane is gone by resume time — honoring an explicit `targetRef`
+ *  session name only for a `new-session` task; `prompt` (when set) is submitted
+ *  after the agent is ready (a follow-up turn). */
 export interface LaunchOpts {
   resume?: boolean;
   prompt?: string;
@@ -229,8 +230,8 @@ export interface LaunchOpts {
  * Launch a task into a pane. Without `opts`, launches per the task's target
  * (`new-window`/`split`, a project-named `new-session` created-or-attached, or
  * `send-to-existing`). With `opts.resume`, launches the agent's resume command
- * — into the project session for a `new-session` task, else a fresh
- * `new-window` — and submits `opts.prompt` only if one was given. Throws on an
+ * into the task's project-named session (create-or-attach, since the original
+ * pane is gone) and submits `opts.prompt` only if one was given. Throws on an
  * unsupported target, a missing working directory, a missing `targetRef` for
  * `send-to-existing`, or a tmux failure.
  */
@@ -267,8 +268,15 @@ export async function launchTask(
   const runNewSession = async (
     launchCommand: string,
     promptToSend: string | undefined,
+    honorTargetRef = true,
   ): Promise<LaunchResult> => {
-    const explicit = task.targetRef ? sanitizeTmuxName(task.targetRef) : "";
+    // `honorTargetRef` is true for a fresh new-session run and a new-session
+    // resume (the explicit `targetRef` names the session). It is false when
+    // resuming a non-new-session task, whose `targetRef` (if any) is a pane id,
+    // not a session name — such a resume lands in the project-derived session.
+    const explicit = honorTargetRef && task.targetRef
+      ? sanitizeTmuxName(task.targetRef)
+      : "";
     const { name, exists } = explicit
       ? {
           name: explicit,
@@ -346,13 +354,18 @@ export async function launchTask(
 
   // Resume: resume command + optional follow-up prompt. A new-session task
   // resumes back into its project session (create-or-attach); every other
-  // target resumes into a fresh new-window.
+  // target resumes into the project-named session too (create-or-attach).
   if (opts.resume) {
     const launchCommand = buildLaunchCommand(task, deps, { resume: true });
-    if (task.target === "new-session") {
-      return runNewSession(launchCommand, opts.prompt);
-    }
-    return runInPane(paneCreateArgv("new-window"), launchCommand, opts.prompt);
+    // The original pane/window is gone by resume time, so every target lands in
+    // the project-named session (create-or-attach), never a new-window in the
+    // currently-attached session. new-session honors its explicit targetRef
+    // name; other targets use the project-derived name.
+    return runNewSession(
+      launchCommand,
+      opts.prompt,
+      task.target === "new-session",
+    );
   }
 
   if (task.target === "new-window" || task.target === "split") {

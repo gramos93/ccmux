@@ -268,16 +268,35 @@ describe("isAgentResumable", () => {
 });
 
 describe("launchTask resume", () => {
-  it("resumes into a fresh new-window with no prompt (re-attach)", async () => {
-    const { runTmux, calls } = fakeTmux({ paneId: "%7", captures: ["$ "] });
+  it("resumes a non-new-session task into the project session (create-or-attach), not the current session", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%7",
+      captures: ["$ "],
+      sessionExists: false,
+    });
     const rec = recorder();
     const result = await launchTask(
-      makeTask({ target: "split", nativeSessionId: "nat-1" }),
+      // A split task with a pane-id targetRef — the resume must NOT use it as a
+      // session name, and must NOT open a bare new-window in the current session.
+      makeTask({
+        target: "split",
+        project: proj,
+        targetRef: "%3",
+        nativeSessionId: "nat-1",
+      }),
       deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
       { resume: true },
     );
     expect(result.paneId).toBe("%7");
-    expect(calls[0][0]).toBe("new-window"); // forced, not split
+    expect(calls.some((c) => c[0] === "has-session")).toBe(true); // project-session probe
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toBeDefined();
+    expect(create).toContain("-s");
+    expect(create).toContain(name); // project-derived name
+    expect(create).not.toContain("%3"); // pane-id targetRef not used as a name
+    expect(calls.some((c) => c[0] === "new-window")).toBe(false); // no current-session window
     expect(rec.literal).toEqual([
       { pane: "%7", text: "claude --resume nat-1", enter: true },
     ]);

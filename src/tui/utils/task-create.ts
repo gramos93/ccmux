@@ -308,12 +308,19 @@ export type TaskActivation =
   | { kind: "jump"; sessionId: string }
   | { kind: "none" };
 
-export function resolveTaskActivation(task: TaskInstance): TaskActivation {
+export function resolveTaskActivation(
+  task: TaskInstance,
+  liveSession?: EnrichedSession | null,
+): TaskActivation {
   if (task.status === "pending") return { kind: "run", id: task.id };
   if (task.status === "stopped") return { kind: "resume", id: task.id };
-  // A `done` task is revivable: resume when it retains a conversation to
-  // re-attach, else relaunch fresh (e.g. a headless done with no session).
+  // A `done` task is user-controlled and may leave its pane OPEN. If its
+  // linked session is still live, jump to that pane (never spawn a duplicate);
+  // otherwise revive — resume when it retains a conversation, else relaunch.
   if (task.status === "done") {
+    if (liveSession?.tmuxPane && task.sessionId) {
+      return { kind: "jump", sessionId: task.sessionId };
+    }
     return task.nativeSessionId
       ? { kind: "resume", id: task.id }
       : { kind: "run", id: task.id };
