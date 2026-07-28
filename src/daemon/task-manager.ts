@@ -219,8 +219,12 @@ export class TaskManager extends EventEmitter {
   ): Promise<TaskInstance | undefined> {
     const task = await this.get(id);
     if (!task) return undefined;
-    if (task.status !== "stopped") {
-      throw new Error(`Task is not stopped (status: ${task.status})`);
+    // A `done` task is revivable too (it retains its `nativeSessionId` when
+    // interactive); the nativeSessionId + resumable-agent gates below still apply.
+    if (task.status !== "stopped" && task.status !== "done") {
+      throw new Error(
+        `Task is not stopped or done (status: ${task.status})`,
+      );
     }
 
     const result = await this.launch(task, { resume: true, prompt });

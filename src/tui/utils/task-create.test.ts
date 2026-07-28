@@ -151,11 +151,23 @@ describe("resolveTaskActivation", () => {
       ),
     ).toEqual({ kind: "jump", sessionId: "sess-9" });
   });
-  it("is a no-op for a running task with no session, and for done/failed", () => {
+  it("revives a done task: resume when it has a nativeSessionId, else run", () => {
+    expect(
+      resolveTaskActivation(
+        mockTask({ id: "d1", status: "done", nativeSessionId: "nat-1" }),
+      ),
+    ).toEqual({ kind: "resume", id: "d1" });
+    expect(
+      resolveTaskActivation(
+        mockTask({ id: "d2", status: "done", nativeSessionId: undefined }),
+      ),
+    ).toEqual({ kind: "run", id: "d2" });
+  });
+
+  it("is a no-op for a running task with no session, and for failed", () => {
     expect(resolveTaskActivation(mockTask({ status: "running" })).kind).toBe(
       "none",
     );
-    expect(resolveTaskActivation(mockTask({ status: "done" })).kind).toBe("none");
     expect(resolveTaskActivation(mockTask({ status: "failed" })).kind).toBe(
       "none",
     );

@@ -276,11 +276,25 @@ describe("TaskManager.resume", () => {
     expect(events).toEqual([{ kind: "updated", task: resumed! }]);
   });
 
-  it("rejects resuming a task that is not stopped", async () => {
+  it("resumes a done task that retains a nativeSessionId → running", async () => {
+    const launch = async (_t: unknown, opts?: { resume?: boolean }) => ({
+      paneId: opts?.resume ? "%99" : "%42",
+    });
+    const { tm, id } = await stoppedTask(launch);
+    await tm.updateStatus(id, "done"); // mark it done (keeps nativeSessionId)
+    expect((await tm.get(id))?.status).toBe("done");
+
+    const resumed = await tm.resume(id);
+    expect(resumed?.status).toBe("running");
+    expect(resumed?.paneId).toBe("%99");
+    expect(resumed?.nativeSessionId).toBe("nat-1");
+  });
+
+  it("rejects resuming a task that is neither stopped nor done", async () => {
     const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
     const created = await tm.create(body);
-    await tm.run(created.id); // running, not stopped
-    await expect(tm.resume(created.id)).rejects.toThrow(/not stopped/);
+    await tm.run(created.id); // running, not stopped/done
+    await expect(tm.resume(created.id)).rejects.toThrow(/not stopped or done/);
   });
 
   it("returns undefined for an unknown id", async () => {

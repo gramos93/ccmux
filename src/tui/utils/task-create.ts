@@ -311,6 +311,13 @@ export type TaskActivation =
 export function resolveTaskActivation(task: TaskInstance): TaskActivation {
   if (task.status === "pending") return { kind: "run", id: task.id };
   if (task.status === "stopped") return { kind: "resume", id: task.id };
+  // A `done` task is revivable: resume when it retains a conversation to
+  // re-attach, else relaunch fresh (e.g. a headless done with no session).
+  if (task.status === "done") {
+    return task.nativeSessionId
+      ? { kind: "resume", id: task.id }
+      : { kind: "run", id: task.id };
+  }
   if (task.status === "running" && task.sessionId) {
     return { kind: "jump", sessionId: task.sessionId };
   }
