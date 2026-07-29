@@ -7,7 +7,8 @@ description: |
   check on or resume it, or manage a backlog of such work, e.g. "set up a task to add the
   --dry-run flag and run it", "queue three tasks I'll run later", "resume the stopped task and
   tell it to also update the tests", "run this in a new tmux session", "spin up codex in a pane
-  for this refactor", "list my tasks / what's still pending". The task target chooses headless
+  for this refactor", "run this task on its own branch/worktree", "list my tasks / what's still
+  pending". The task target chooses headless
   (invoke-backed) vs a live pane. The user supplies the what/which-agent policy; this skill
   teaches the mechanics of `create`/`run`/`resume`/`list`/`rm`, target selection, and the
   task-vs-invoke-vs-spawn boundary. For one-shot values you thread between steps use `invoke`
@@ -86,6 +87,57 @@ value is not exposed by `ccmux task`; when you need that value in hand, use `inv
 produce a live session you (or the user) can watch and attach to; `send-to-existing` needs a
 `--target-ref <pane>`; `background` runs with no pane and surfaces only status.
 
+## Worktrees: isolating a task on its own branch (wtm)
+
+A task can run in a dedicated **git worktree** so its work lands on its own branch, isolated
+from the main checkout. Worktree intent is **orthogonal to `--target`** — it only changes the
+working directory the agent launches in (the resolved worktree path instead of the repo root);
+every target still behaves as its table row says.
+
+Flags:
+
+- `--worktree` — run in a worktree; branch defaults to a slug of the task name, base to the
+  repo's default branch (`origin/HEAD`, else `main`/`master`).
+- `--branch <name>` / `--base <ref>` — name the branch and/or the branch it forks from (either
+  flag implies a worktree). An explicit branch is reused if it already exists (deliberate
+  sharing); a derived slug that collides gets a short id suffix so tasks don't share by accident.
+
+```bash
+ccmux task create --dir "$REPO" --agent claude --worktree --run \
+  --prompt "Add a --dry-run flag."                       # branch derived from the name
+ccmux task create --dir "$REPO" --agent codex --branch feat-x --base main --run \
+  --prompt "Implement feature X."                        # explicit branch + base
+```
+
+**Session model.** All worktrees of one repo share **one** project-keyed tmux session, with a
+separate window per worktree **named after its branch**. Provisioning is **lazy** — the worktree
+is created (or reused) when the task *runs*, not when it's created. Resume re-enters the same
+worktree. ccmux **never removes** a worktree (defer to `wtm cleanup`); `TaskDetail` shows the
+resolved `worktree path` / `branch` once launched.
+
+### wtm-only, and its invasiveness — propose before scaffolding
+
+Worktrees are provisioned **only** via `wtm` (the bare-repo worktree manager), which operates
+on **wtm-managed (bare) repos**. ccmux does **not** create worktrees natively, and it **will not
+adopt a repo for you**.
+
+- If the task's repo **is** wtm-managed → the worktree is created/reused and the task launches.
+- If it is **not** → the run is **refused and the task stays `pending`** (never `failed`), with
+  an actionable "not wtm-managed; run `wtm-init`" message. Nothing is created. The identical
+  task runs later, once the repo is adopted.
+
+**Why ccmux won't auto-adopt:** `wtm init` (adopt) **restructures the repo in place** — it moves
+the working tree into `<root>/<branch>`, refuses on a dirty tree, and disrupts any editor/shell/
+pane already rooted in that repo. That is too invasive to do silently on a task run.
+
+**So, before scaffolding worktree tasks in a repo that isn't yet wtm-managed:** *propose* the
+adopt step to the user rather than assuming it — e.g. "This repo isn't wtm-managed; worktree
+tasks need `wtm-init` first (it restructures the layout and needs a clean tree). Want me to run
+`wtm-init` here, or scaffold the tasks as pending for you to adopt yourself?" Get an explicit
+go-ahead, and confirm the working tree is clean, before running `wtm-init`. Never run it
+unattended as a side effect of a task. Absent go-ahead, scaffold the tasks anyway — they sit
+`pending` and run cleanly once the user adopts the repo.
+
 ## Scaffolding a task: `create`
 
 ```bash
@@ -108,8 +160,9 @@ ccmux task create --dir /path/to/repo --target new-session --target-ref review -
 
 Flags (all optional except a prompt or a passthrough command): `--dir` (project, default cwd),
 `--agent` (default from config), `--prompt`, `--template <name>` (apply a config preset),
-`--target` / `--target-ref`, `--bg`, `--run`. A **raw passthrough command** after `--` is
-launched verbatim instead of a prompt:
+`--target` / `--target-ref`, `--bg`, `--worktree` / `--branch` / `--base` (isolate the task on
+its own git worktree — see **Worktrees** below), `--run`. A **raw passthrough command** after
+`--` is launched verbatim instead of a prompt:
 
 ```bash
 ccmux task create --dir /path/to/repo --target new-window --run -- codex exec "run the linters"
@@ -171,6 +224,10 @@ ccmux send <sessionId> "now run the tests"
   won't launch.
 - **`create` without `--run` only stores a pending task** — remember to `run` it (or pass
   `--run`). Creating is not launching.
+- **A worktree task in a non-wtm repo blocks, it doesn't fail.** The run is refused, the task
+  stays `pending`, and you get a "run `wtm-init`" message. Don't retry blindly or mark it broken
+  — either adopt the repo (with the user's OK; see **Worktrees**) or leave it pending. ccmux
+  never adopts the repo itself.
 - **Prefix addressing is unique-or-error.** If `ccmux task run ab` is ambiguous, use more
   characters or the full id.
 - When a flag or behavior is unclear, run `ccmux task --help` / `ccmux task <verb> --help`
