@@ -122,6 +122,27 @@ describe("ccmux task create", () => {
     expect((createCall()!.body as { target: string }).target).toBe("background");
   });
 
+  it("omits worktree when no worktree flags are set", async () => {
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await runCli("create", "-d", DIR, "--prompt", "hi");
+    expect("worktree" in (createCall()!.body as Record<string, unknown>)).toBe(false);
+  });
+
+  it("--worktree alone sends worktree: true", async () => {
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await runCli("create", "-d", DIR, "--worktree", "--prompt", "hi");
+    expect((createCall()!.body as { worktree: unknown }).worktree).toBe(true);
+  });
+
+  it("--branch/--base send the object form", async () => {
+    stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
+    await runCli("create", "-d", DIR, "--branch", "feature-x", "--base", "develop", "--prompt", "hi");
+    expect((createCall()!.body as { worktree: unknown }).worktree).toEqual({
+      branch: "feature-x",
+      base: "develop",
+    });
+  });
+
   it("captures the `-- <args>` tail as command", async () => {
     stubFetch(() => ({ task: { id: "abcdef12", status: "pending" } }));
     await runCli("create", "-d", DIR, "--agent", "codex", "--", "codex", "exec", "hi");

@@ -111,6 +111,12 @@ export function createTaskCommand(): Command {
       "Pane for split/send-to-existing; explicit session name for new-session",
     )
     .option("--bg", "Run headless via the invoke subsystem (target=background)")
+    .option(
+      "--worktree",
+      "Run in a wtm worktree (branch defaults to a slug of the task name)",
+    )
+    .option("--branch <name>", "Worktree branch (implies --worktree)")
+    .option("--base <ref>", "Base branch the worktree forks from (implies --worktree)")
     .option("--run", "Run the task immediately after creating it")
     .action(
       async (
@@ -123,6 +129,9 @@ export function createTaskCommand(): Command {
           target?: string;
           targetRef?: string;
           bg?: boolean;
+          worktree?: boolean;
+          branch?: string;
+          base?: string;
           run?: boolean;
         },
       ) => {
@@ -138,6 +147,18 @@ export function createTaskCommand(): Command {
           process.exit(1);
         }
         await ensureDaemon();
+        // Worktree intent: `--branch`/`--base` produce the object form (and
+        // imply a worktree); a bare `--worktree` sends `true`; none → unset so
+        // the default cascade decides. Only defined keys go in the object.
+        const worktree =
+          options.branch !== undefined || options.base !== undefined
+            ? {
+                ...(options.branch !== undefined ? { branch: options.branch } : {}),
+                ...(options.base !== undefined ? { base: options.base } : {}),
+              }
+            : options.worktree
+              ? true
+              : undefined;
         // Omit unset agent/target so the daemon's default cascade (config
         // `defaults` → project → template → built-in) applies. JSON.stringify
         // drops `undefined` keys. `--bg` is sugar for target=background.
@@ -149,6 +170,7 @@ export function createTaskCommand(): Command {
           target: options.bg ? "background" : options.target,
           targetRef: options.targetRef,
           command: cmd.length > 0 ? cmd : undefined,
+          worktree,
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {
