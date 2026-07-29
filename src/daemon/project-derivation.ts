@@ -162,10 +162,22 @@ function resolveWorktreeProject(
     ? rawGitdir
     : resolve(gitFileDir, rawGitdir);
 
-  const marker = `${sep}.git${sep}worktrees${sep}`;
+  // A worktree's gitdir ends in `…/worktrees/<name>`. Two layouts produce it:
+  //   standard:  <main>/.git/worktrees/<name>   (`.git` segment before it)
+  //   bare/wtm:  <bare>/worktrees/<name>        (no `.git` segment)
+  // Match on `worktrees` so both group under their repo. A submodule's gitdir
+  // is `<main>/.git/modules/<name>` (no `worktrees`), so it never matches here.
+  const marker = `${sep}worktrees${sep}`;
   const markerIdx = gitdir.lastIndexOf(marker);
   if (markerIdx === -1) return null;
 
-  const mainRoot = gitdir.slice(0, markerIdx);
+  let mainRoot = gitdir.slice(0, markerIdx);
+  // Standard layout: strip the trailing `/.git` so the project is the main
+  // checkout's basename (byte-identical to the prior behavior). The bare layout
+  // has no `.git` segment, so its basename is the bare repo dir itself.
+  const dotGit = `${sep}.git`;
+  if (mainRoot.endsWith(dotGit)) {
+    mainRoot = mainRoot.slice(0, -dotGit.length);
+  }
   return cwdBasename(mainRoot);
 }
