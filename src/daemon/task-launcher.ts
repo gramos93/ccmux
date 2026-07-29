@@ -66,7 +66,7 @@ export const realWorktreeResolver: WorktreeResolver = async (task) => {
   if (!bareRoot) {
     throw new WorktreeError(
       "not-wtm",
-      `${task.project} is not a wtm-managed (bare) repository — run \`wtm-init\` there first, then run this task`,
+      `${task.project} is not a wtm-managed (bare) repository — run \`wtm init\` there first, then run this task`,
     );
   }
   const intent = task.worktree;

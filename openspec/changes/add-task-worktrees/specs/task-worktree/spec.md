@@ -66,22 +66,22 @@ The system SHALL derive the worktree branch and base when the intent does not sp
 
 ### Requirement: Non-wtm repository blocks the run and keeps the task pending
 
-When a task carries worktree intent but its repository is not wtm-managed (no bare repository can be confirmed via `git rev-parse --git-common-dir` + `core.bare`), the daemon SHALL refuse the run with a clear, actionable error stating the repo is not wtm-managed and that the dev must run `wtm-init` first. The refused run SHALL create nothing (no worktree, no pane, no agent launch) and SHALL NOT transition the task's status: a `pending` task stays `pending` (not `failed`), so the identical task runs successfully once the dev has adopted the repo. The daemon SHALL NOT adopt/init the repository itself. A task without worktree intent SHALL be unaffected and launch in the repo root as before.
+When a task carries worktree intent but its repository is not wtm-managed (no bare repository can be confirmed via `git rev-parse --git-common-dir` + `core.bare`), the daemon SHALL refuse the run with a clear, actionable error stating the repo is not wtm-managed and that the dev must run `wtm init` first. The refused run SHALL create nothing (no worktree, no pane, no agent launch) and SHALL NOT transition the task's status: a `pending` task stays `pending` (not `failed`), so the identical task runs successfully once the dev has adopted the repo. The daemon SHALL NOT adopt/init the repository itself. A task without worktree intent SHALL be unaffected and launch in the repo root as before.
 
 #### Scenario: Worktree task in a non-bare repo is blocked and stays pending
 
 - **WHEN** a `pending` worktree task is run in a repository that is not wtm-managed (not bare)
-- **THEN** the run is refused with an actionable "not wtm-managed; run `wtm-init`" error, nothing is created or launched, and the task's status remains `pending`
+- **THEN** the run is refused with an actionable "not wtm-managed; run `wtm init`" error, nothing is created or launched, and the task's status remains `pending`
 
 #### Scenario: The same task runs after the dev adopts the repo
 
-- **WHEN** a worktree task that was previously blocked is run again after the dev has run `wtm-init` on its repo
+- **WHEN** a worktree task that was previously blocked is run again after the dev has run `wtm init` on its repo
 - **THEN** the worktree is provisioned and the agent launches, with no change to the task other than the successful run
 
 #### Scenario: ccmux never adopts the repo
 
 - **WHEN** a worktree task is run in a non-wtm repo
-- **THEN** the repository's on-disk layout is left untouched (ccmux does not run `wtm init`/`wtm-init`)
+- **THEN** the repository's on-disk layout is left untouched (ccmux does not run `wtm init`)
 
 #### Scenario: Non-worktree task is unaffected
 

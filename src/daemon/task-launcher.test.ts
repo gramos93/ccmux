@@ -737,7 +737,7 @@ describe("launchTask worktree", () => {
     const { runTmux, calls } = fakeTmux();
     const rec = recorder();
     const blocked = async () => {
-      throw new WorktreeError("not-wtm", "not wtm-managed — run wtm-init");
+      throw new WorktreeError("not-wtm", "not wtm-managed — run wtm init");
     };
     const err = await launchTask(
       makeTask({ target: "new-window", worktree: true }),

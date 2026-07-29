@@ -3,7 +3,7 @@
 - [x] 1.1 Create `src/lib/worktree.ts` with an injectable command runner (mirroring `git.ts`/`task-launcher.ts`): `resolveBareRepo(cwd)` runs `git rev-parse --git-common-dir`, resolves to absolute, and confirms `git config --get core.bare` is `true`; returns the bare root or `null`
 - [x] 1.2 Add `resolveWorktree(bareRoot, { branch, base })` returning `{ path, branch, created }`: list via `git worktree list --porcelain`, reuse a branch-matching worktree, else `wtm create <branch> --from <base> --no-shell` at `bareRoot` producing `<bare>/<branch>`
 - [x] 1.3 Implement branch defaulting (`slug(taskDisplayName)`, collision → short task-id suffix) and base defaulting (`git symbolic-ref refs/remotes/origin/HEAD`, fallback `main`→`master`)
-- [x] 1.4 Define the error contract as distinct, typed outcomes: non-bare/non-wtm repo → actionable "not wtm-managed; run `wtm-init`" (the run-should-stay-pending signal); missing `wtm` binary → "install wtm"; do NOT auto-init/adopt
+- [x] 1.4 Define the error contract as distinct, typed outcomes: non-bare/non-wtm repo → actionable "not wtm-managed; run `wtm init`" (the run-should-stay-pending signal); missing `wtm` binary → "install wtm"; do NOT auto-init/adopt
 - [x] 1.5 Write `src/lib/worktree.test.ts` with a faked runner: bare-root discovery from root and from a worktree, create vs reuse, branch/base defaulting + collision suffix, non-bare error, missing-wtm error
 
 ## 2. Task model & store
@@ -35,10 +35,10 @@
 
 - [x] 6.1 Add `--worktree`, `--branch <name>`, `--base <ref>` flags to `ccmux task create` in `src/commands/task.ts` (`--worktree` alone → `true`; `--branch`/`--base` → object form; unset → absent) and cover in `task.test.ts`
 - [x] 6.2 Update `src/tui/components/TaskDetail.tsx` to show the resolved `worktreePath`/`branch` after launch (intent-only before launch) and cover in its test
-- [x] 6.3 Surface the non-wtm block in the CLI/TUI: `ccmux task run` prints the actionable "run `wtm-init`" message and reports the task still pending; the task board reflects the still-pending status (no failed state)
+- [x] 6.3 Surface the non-wtm block in the CLI/TUI: `ccmux task run` prints the actionable "run `wtm init`" message and reports the task still pending; the task board reflects the still-pending status (no failed state)
 
 ## 7. Verification
 
 - [x] 7.1 `bun run typecheck` and `bun test` green
-- [x] 7.2 End-to-end in a detached tmux session: create a worktree task in a wtm-managed bare repo, run it, confirm the agent launches in `<bare>/<branch>` as a branch-named window in the project session; verify a worktree task in a non-bare repo is blocked (actionable `wtm-init` message, task stays `pending`, nothing created), then `wtm-init` the repo and confirm the same task now runs
+- [x] 7.2 End-to-end in a detached tmux session: create a worktree task in a wtm-managed bare repo, run it, confirm the agent launches in `<bare>/<branch>` as a branch-named window in the project session; verify a worktree task in a non-bare repo is blocked (actionable `wtm init` message, task stays `pending`, nothing created), then `wtm init` the repo and confirm the same task now runs
 - [x] 7.3 Confirm in the picker/TUI that two worktrees of one repo group under a single project (grouping fix) — capture pane output

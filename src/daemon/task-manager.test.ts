@@ -473,7 +473,7 @@ describe("TaskManager worktree persistence + block gate", () => {
   it("a non-wtm block leaves the task pending and emits no running/failed", async () => {
     const tm = new TaskManager({
       launch: async () => {
-        throw new WorktreeError("not-wtm", "not wtm-managed — run wtm-init");
+        throw new WorktreeError("not-wtm", "not wtm-managed — run wtm init");
       },
     });
     const created = await tm.create({ ...body, worktree: true });
@@ -491,7 +491,7 @@ describe("TaskManager worktree persistence + block gate", () => {
     let blocked = true;
     const tm = new TaskManager({
       launch: async () => {
-        if (blocked) throw new WorktreeError("not-wtm", "run wtm-init");
+        if (blocked) throw new WorktreeError("not-wtm", "run wtm init");
         return { paneId: "%9", worktreePath: "/bare/x", branch: "x" };
       },
     });
@@ -499,7 +499,7 @@ describe("TaskManager worktree persistence + block gate", () => {
     await tm.run(created.id).catch(() => {});
     expect((await tm.get(created.id))?.status).toBe("pending");
 
-    blocked = false; // dev ran wtm-init
+    blocked = false; // dev ran wtm init
     const ran = await tm.run(created.id);
     expect(ran?.status).toBe("running");
     expect(ran?.worktreePath).toBe("/bare/x");
