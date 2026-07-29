@@ -187,11 +187,17 @@ export class TaskManager extends EventEmitter {
     id: string,
     task: TaskInstance,
   ): Promise<TaskInstance | undefined> {
+    // The launcher resolves the worktree BEFORE creating any pane, so a
+    // `not-wtm` (or other worktree) error throws here — before the status patch
+    // below — leaving the task's status unchanged (a `pending` task stays
+    // `pending`, not `failed`) and re-runnable once the repo is wtm-managed.
     const result = await this.launch(task);
 
     const updated = await patchTask(id, {
       status: "running",
       ...(result.paneId ? { paneId: result.paneId } : {}),
+      ...(result.worktreePath ? { worktreePath: result.worktreePath } : {}),
+      ...(result.branch ? { branch: result.branch } : {}),
     });
     if (!updated) return undefined;
 
@@ -232,6 +238,8 @@ export class TaskManager extends EventEmitter {
     const updated = await patchTask(id, {
       status: "running",
       ...(result.paneId ? { paneId: result.paneId } : {}),
+      ...(result.worktreePath ? { worktreePath: result.worktreePath } : {}),
+      ...(result.branch ? { branch: result.branch } : {}),
     });
     if (!updated) return undefined;
     if (result.paneId) this.pendingCorrelation.set(result.paneId, id);

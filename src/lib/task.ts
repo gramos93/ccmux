@@ -119,6 +119,14 @@ export interface TaskInstance extends TaskSpec {
   nativeSessionId?: string;
   /** The invocation a `background` task was dispatched to. */
   invocationId?: string;
+  /**
+   * The absolute path of the worktree this task launched into, resolved at run
+   * time from its {@link worktree} intent (absent at creation and for tasks
+   * without worktree intent). Persisted so `resume` re-enters the same worktree.
+   */
+  worktreePath?: string;
+  /** The branch checked out in {@link worktreePath}, resolved at run time. */
+  branch?: string;
 }
 
 /**

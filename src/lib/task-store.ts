@@ -165,7 +165,13 @@ export async function patchTask(
   patch: Partial<
     Pick<
       TaskInstance,
-      "status" | "paneId" | "sessionId" | "nativeSessionId" | "invocationId"
+      | "status"
+      | "paneId"
+      | "sessionId"
+      | "nativeSessionId"
+      | "invocationId"
+      | "worktreePath"
+      | "branch"
     >
   >,
 ): Promise<TaskInstance | undefined> {

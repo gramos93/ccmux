@@ -15,6 +15,7 @@ import {
 } from "./task-launcher";
 import type { AgentDef } from "../lib/agents";
 import type { TaskInstance } from "../lib/task";
+import { WorktreeError } from "../lib/worktree";
 
 const CWD = tmpdir(); // a real, existing directory so the cwd check passes
 
@@ -663,5 +664,90 @@ describe("launchTask other targets", () => {
     // The launch command is the resume command.
     expect(rec.literal[0]?.text).toContain("--resume");
     expect(rec.literal[0]?.text).toContain("nat-9");
+  });
+});
+
+describe("launchTask worktree", () => {
+  // A real dir so the pre-launch existence check passes and differs from CWD.
+  const WT = mkdtempSync(join(tmpdir(), "ccmux-wt-"));
+
+  /** A worktree resolver spy returning a fixed path/branch. */
+  function wtResolver(path = WT, branch = "feature-x") {
+    const calls: TaskInstance[] = [];
+    return {
+      calls,
+      resolveWorktree: async (task: TaskInstance) => {
+        calls.push(task);
+        return { path, branch };
+      },
+    };
+  }
+
+  it("new-window launches in the worktree with a branch-named window", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    const res = await launchTask(
+      makeTask({ target: "new-window", worktree: true }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    const create = calls.find((c) => c[0] === "new-window");
+    expect(create).toContain("-c");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(WT);
+    expect(create).toContain("-n");
+    expect(create?.[create.indexOf("-n") + 1]).toBe("feature-x");
+    expect(res.worktreePath).toBe(WT);
+    expect(res.branch).toBe("feature-x");
+    expect(wt.calls.length).toBe(1);
+  });
+
+  it("new-session opens a branch-named window in the project-keyed session", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    await launchTask(
+      makeTask({ target: "new-session", worktree: { branch: "feature-x" } }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(WT);
+    expect(create?.[create.indexOf("-n") + 1]).toBe("feature-x");
+    // @ccmux_project stays the repo root, NOT the worktree path.
+    const stamp = calls.find((c) => c[0] === "set-option");
+    expect(stamp?.[stamp.length - 1]).toBe(CWD);
+  });
+
+  it("does not resolve a worktree for a task without worktree intent", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    const res = await launchTask(
+      makeTask({ target: "new-window" }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    expect(wt.calls.length).toBe(0);
+    expect(res.worktreePath).toBeUndefined();
+    // cwd is the project root, no -n window name.
+    const create = calls.find((c) => c[0] === "new-window");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(CWD);
+    expect(create).not.toContain("-n");
+  });
+
+  it("a non-wtm block short-circuits before any pane is created", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const blocked = async () => {
+      throw new WorktreeError("not-wtm", "not wtm-managed — run wtm-init");
+    };
+    const err = await launchTask(
+      makeTask({ target: "new-window", worktree: true }),
+      deps(runTmux, rec, { resolveWorktree: blocked }),
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(WorktreeError);
+    expect((err as WorktreeError).kind).toBe("not-wtm");
+    // Nothing was created.
+    expect(
+      calls.some((c) => ["new-window", "split-window", "new-session"].includes(c[0])),
+    ).toBe(false);
   });
 });
