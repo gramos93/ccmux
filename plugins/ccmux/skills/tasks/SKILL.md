@@ -123,8 +123,18 @@ adopt a repo for you**.
 
 - If the task's repo **is** wtm-managed → the worktree is created/reused and the task launches.
 - If it is **not** → the run is **refused and the task stays `pending`** (never `failed`), with
-  an actionable "not wtm-managed; run `wtm-init`" message. Nothing is created. The identical
+  an actionable "not wtm-managed; run `wtm init`" message. Nothing is created. The identical
   task runs later, once the repo is adopted.
+
+**Adopt with plain `wtm init`, not a wrapper.** ccmux owns the agent launch (into its
+project-session/branch-window model, with session correlation and resume). So a repo's wtm
+`post_create` hook **must not launch an agent** — ccmux calls `wtm create` under the hood, which
+*always* runs `post_create` (even with `--no-shell`), so a claude-launching `post_create` would
+**double-launch** (one agent from the hook in its own session, another from ccmux). Adopt via
+plain **`wtm init <url> [dir]`** / **`wtm init [path]`** (base branch is auto-detected — there is
+no `--main` flag), whose default `post_create` is a harmless stub. Keep `post_create` to setup
+only (deps, env), or empty it. Do **not** use a shell wrapper that symlinks an agent-launching
+`post_create` for ccmux-driven repos.
 
 **Why ccmux won't auto-adopt:** `wtm init` (adopt) **restructures the repo in place** — it moves
 the working tree into `<root>/<branch>`, refuses on a dirty tree, and disrupts any editor/shell/
@@ -132,9 +142,9 @@ pane already rooted in that repo. That is too invasive to do silently on a task 
 
 **So, before scaffolding worktree tasks in a repo that isn't yet wtm-managed:** *propose* the
 adopt step to the user rather than assuming it — e.g. "This repo isn't wtm-managed; worktree
-tasks need `wtm-init` first (it restructures the layout and needs a clean tree). Want me to run
-`wtm-init` here, or scaffold the tasks as pending for you to adopt yourself?" Get an explicit
-go-ahead, and confirm the working tree is clean, before running `wtm-init`. Never run it
+tasks need `wtm init` first (it restructures the layout and needs a clean tree). Want me to run
+`wtm init` here, or scaffold the tasks as pending for you to adopt yourself?" Get an explicit
+go-ahead, and confirm the working tree is clean, before running `wtm init`. Never run it
 unattended as a side effect of a task. Absent go-ahead, scaffold the tasks anyway — they sit
 `pending` and run cleanly once the user adopts the repo.
 
@@ -225,9 +235,12 @@ ccmux send <sessionId> "now run the tests"
 - **`create` without `--run` only stores a pending task** — remember to `run` it (or pass
   `--run`). Creating is not launching.
 - **A worktree task in a non-wtm repo blocks, it doesn't fail.** The run is refused, the task
-  stays `pending`, and you get a "run `wtm-init`" message. Don't retry blindly or mark it broken
-  — either adopt the repo (with the user's OK; see **Worktrees**) or leave it pending. ccmux
-  never adopts the repo itself.
+  stays `pending`, and you get a "run `wtm init`" message. Don't retry blindly or mark it broken
+  — either adopt the repo with plain `wtm init` (with the user's OK; see **Worktrees**) or leave
+  it pending. ccmux never adopts the repo itself.
+- **The repo's `post_create` hook must not launch an agent.** ccmux owns the launch; since
+  `wtm create` always runs `post_create`, an agent-spawning hook double-launches. Adopt with
+  plain `wtm init` (stub hook) — see **Worktrees**.
 - **Prefix addressing is unique-or-error.** If `ccmux task run ab` is ambiguous, use more
   characters or the full id.
 - When a flag or behavior is unclear, run `ccmux task --help` / `ccmux task <verb> --help`

@@ -113,13 +113,16 @@ ccmux task create --dir /path/to/plain-repo --agent claude --worktree --run \
   --prompt "..."
 # -> Created task 3c7d…
 #    Failed to run task: /path/to/plain-repo is not a wtm-managed (bare) repository —
-#    run `wtm-init` there first, then run this task
+#    run `wtm init` there first, then run this task
 ccmux task list | grep '^3c7d'
 # 3c7d…  pending   claude  /path/to/plain-repo      <- still pending, not failed
 
 # Don't silently adopt. PROPOSE it, confirm a clean tree, then (with the user's OK):
 cd /path/to/plain-repo && git status --porcelain   # must be empty
-wtm-init .                                          # restructures the repo in place
+wtm init .                                          # plain init; restructures the repo in place.
+                                                    # Keep post_create as a setup stub — it must
+                                                    # NOT launch an agent (ccmux owns the launch;
+                                                    # wtm create always runs post_create).
 # Now the SAME task runs:
 ccmux task run 3c7d
 ```
