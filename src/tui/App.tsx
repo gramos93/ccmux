@@ -1657,31 +1657,35 @@ export function App(props: AppProps) {
               iconStyle={store.state.iconStyle}
             />
             <Show when={!props.sidebar && store.state.showPreview}>
+              {/* Plain-child (not render-prop) Shows: the child re-reads the
+                  memo instead of a narrowed accessor. The render-prop form
+                  throws Solid's "Stale read from <Show>." when the child also
+                  reads a volatile signal (`previewRefreshKey()`) and re-runs
+                  after `when` flips falsy — e.g. a selected running task whose
+                  session unbinds while a delayed refresh bump lands. A plain
+                  child is disposed cleanly on the flip and never re-reads a
+                  stale accessor. */}
               <Show
                 when={selectedTaskLiveSession()}
                 fallback={
                   <Show when={store.selectedTask()}>
-                    {(task: () => TaskInstance) => (
-                      <TaskDetail
-                        task={task()}
-                        width={store.state.previewWidth}
-                        focused={store.state.previewFocused}
-                        onScrollboxRef={(ref) => (previewScrollbox = ref)}
-                      />
-                    )}
+                    <TaskDetail
+                      task={store.selectedTask()!}
+                      width={store.state.previewWidth}
+                      focused={store.state.previewFocused}
+                      onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                    />
                   </Show>
                 }
               >
-                {(session: () => EnrichedSession) => (
-                  <Preview
-                    session={session()}
-                    onScrollboxRef={(ref) => (previewScrollbox = ref)}
-                    iconStyle={store.state.iconStyle}
-                    width={store.state.previewWidth}
-                    focused={store.state.previewFocused}
-                    refreshKey={previewRefreshKey()}
-                  />
-                )}
+                <Preview
+                  session={selectedTaskLiveSession()!}
+                  onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                  iconStyle={store.state.iconStyle}
+                  width={store.state.previewWidth}
+                  focused={store.state.previewFocused}
+                  refreshKey={previewRefreshKey()}
+                />
               </Show>
             </Show>
           </Show>
