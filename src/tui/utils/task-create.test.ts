@@ -28,6 +28,7 @@ function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
     targetRef: "",
     template: "",
     prompt: "",
+    autoMode: false,
     runNow: true,
     ...overrides,
   };
@@ -98,6 +99,7 @@ describe("buildCreateBody", () => {
       target: "new-window",
       agent: "claude",
       prompt: "do it",
+      autoMode: false,
     });
     expect("targetRef" in body).toBe(false);
     expect("template" in body).toBe(false);

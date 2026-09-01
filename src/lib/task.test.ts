@@ -24,6 +24,23 @@ describe("resolveTask (default cascade)", () => {
     expect(resolved.worktree).toBe(true);
   });
 
+  it("resolves autoMode through the same cascade, overridable by input", () => {
+    const fromDefault = resolveTask(
+      { defaults: { autoMode: true } },
+      { project: "p" },
+    );
+    expect(fromDefault.autoMode).toBe(true);
+
+    const overridden = resolveTask(
+      { defaults: { autoMode: true } },
+      { project: "p", input: { autoMode: false } },
+    );
+    expect(overridden.autoMode).toBe(false);
+
+    const unset = resolveTask({}, { project: "p" });
+    expect(unset.autoMode).toBeUndefined();
+  });
+
   it("template fills gaps left by defaults/project/input", () => {
     const resolved = resolveTask(
       { templates: { rev: { target: "split" } } },
@@ -41,6 +58,19 @@ describe("resolveTask (default cascade)", () => {
     expect(resolved.agent).toBe("claude");
     expect(resolved.prompt).toBe("hi");
     expect(resolved.target).toBe("new-window");
+  });
+
+  it("falls back to the built-in agent default when nothing sets one", () => {
+    const resolved = resolveTask({}, { project: "p", input: { prompt: "hi" } });
+    expect(resolved.agent).toBe("claude");
+  });
+
+  it("a configured agent default beats the built-in fallback", () => {
+    const resolved = resolveTask(
+      { defaults: { agent: "codex" } },
+      { project: "p", input: { prompt: "hi" } },
+    );
+    expect(resolved.agent).toBe("codex");
   });
 
   it("layers later than a set field do not clobber with undefined", () => {
@@ -94,10 +124,12 @@ describe("validateNewTask", () => {
       targetRef: "%3",
       command: ["claude", "-p", "hi"],
       worktree: { branch: "feat/x", base: "main" },
+      autoMode: true,
     });
     expect(spec.targetRef).toBe("%3");
     expect(spec.command).toEqual(["claude", "-p", "hi"]);
     expect(spec.worktree).toEqual({ branch: "feat/x", base: "main" });
+    expect(spec.autoMode).toBe(true);
   });
 
   it("accepts the background target", () => {

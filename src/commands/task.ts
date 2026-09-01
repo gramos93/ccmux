@@ -118,6 +118,10 @@ export function createTaskCommand(): Command {
     .option("--branch <name>", "Worktree branch (implies --worktree)")
     .option("--base <ref>", "Base branch the worktree forks from (implies --worktree)")
     .option("--run", "Run the task immediately after creating it")
+    .option(
+      "--auto-mode",
+      "Launch Claude with --permission-mode acceptEdits (auto-approve edits, still prompt for risky commands)",
+    )
     .action(
       async (
         cmd: string[],
@@ -133,6 +137,7 @@ export function createTaskCommand(): Command {
           branch?: string;
           base?: string;
           run?: boolean;
+          autoMode?: boolean;
         },
       ) => {
         // `bin/ccmux` cd's into the repo before running, so process.cwd() is
@@ -171,6 +176,7 @@ export function createTaskCommand(): Command {
           targetRef: options.targetRef,
           command: cmd.length > 0 ? cmd : undefined,
           worktree,
+          autoMode: options.autoMode,
         });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as {

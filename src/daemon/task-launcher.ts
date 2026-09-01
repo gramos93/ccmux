@@ -240,7 +240,8 @@ export function buildLaunchCommand(
     const native = task.nativeSessionId;
     if (!native) throw new Error("cannot resume: task has no nativeSessionId");
     if (task.agent === "claude") {
-      return `${deps.prefs.command ?? "claude"} --resume ${native}`;
+      const base = `${deps.prefs.command ?? "claude"} --resume ${native}`;
+      return task.autoMode ? `${base} --permission-mode acceptEdits` : base;
     }
     const agent = deps.getAgentByType(task.agent);
     if (agent?.resumeCommand) return agent.resumeCommand.replace("{id}", native);
@@ -250,7 +251,8 @@ export function buildLaunchCommand(
     return task.command.map(shellQuote).join(" ");
   }
   if (task.agent === "claude") {
-    return deps.prefs.command ?? "claude";
+    const base = deps.prefs.command ?? "claude";
+    return task.autoMode ? `${base} --permission-mode acceptEdits` : base;
   }
   const agent = deps.getAgentByType(task.agent);
   return agent?.executable ?? getAgentExecutable(task.agent);

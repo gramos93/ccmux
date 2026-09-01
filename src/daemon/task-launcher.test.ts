@@ -204,6 +204,44 @@ describe("buildLaunchCommand", () => {
       ),
     ).toThrow(/no nativeSessionId/);
   });
+
+  it("appends --permission-mode acceptEdits for a fresh claude launch with autoMode", () => {
+    expect(
+      buildLaunchCommand(makeTask({ autoMode: true }), {
+        getAgentByType: () => undefined,
+        prefs: { command: "claude-beta" },
+      }),
+    ).toBe("claude-beta --permission-mode acceptEdits");
+  });
+
+  it("appends --permission-mode acceptEdits when resuming claude with autoMode", () => {
+    expect(
+      buildLaunchCommand(
+        makeTask({ nativeSessionId: "nat-1", autoMode: true }),
+        { getAgentByType: () => undefined, prefs: {} },
+        { resume: true },
+      ),
+    ).toBe("claude --resume nat-1 --permission-mode acceptEdits");
+  });
+
+  it("omits the flag when autoMode is false/unset", () => {
+    expect(
+      buildLaunchCommand(makeTask({ autoMode: false }), {
+        getAgentByType: () => undefined,
+        prefs: {},
+      }),
+    ).toBe("claude");
+  });
+
+  it("does not append the flag for a non-claude agent with autoMode set", () => {
+    expect(
+      buildLaunchCommand(makeTask({ agent: "codex", autoMode: true }), {
+        getAgentByType: () =>
+          ({ executable: "codex-bin" }) as unknown as AgentDef,
+        prefs: {},
+      }),
+    ).toBe("codex-bin");
+  });
 });
 
 describe("session name disambiguation", () => {

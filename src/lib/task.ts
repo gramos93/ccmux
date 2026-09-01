@@ -50,6 +50,9 @@ export const VALID_TASK_STATUSES: TaskStatus[] = [
 /** Built-in fallback applied when the cascade leaves `target` unset. */
 export const DEFAULT_TASK_TARGET: TaskTarget = "new-window";
 
+/** Built-in fallback applied when the cascade leaves `agent` unset. */
+export const DEFAULT_TASK_AGENT = "claude";
+
 /** Built-in status a freshly created instance starts in. */
 export const DEFAULT_TASK_STATUS: TaskStatus = "pending";
 
@@ -95,6 +98,14 @@ export interface TaskSpec {
   command?: string[];
   /** Worktree intent; see {@link TaskWorktree}. */
   worktree?: TaskWorktree;
+  /**
+   * Launch Claude with `--permission-mode acceptEdits` (auto-approve edits
+   * and common filesystem commands; still prompts for Bash/network/writes
+   * outside the working directory). Claude-only; has no effect on
+   * `send-to-existing`/`background` targets, which never build a fresh
+   * launch command.
+   */
+  autoMode?: boolean;
 }
 
 /** A persistent preset: every field optional. */
@@ -162,6 +173,7 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
     ...(spec.targetRef !== undefined ? { targetRef: spec.targetRef } : {}),
     ...(spec.command !== undefined ? { command: spec.command } : {}),
     ...(spec.worktree !== undefined ? { worktree: spec.worktree } : {}),
+    ...(spec.autoMode !== undefined ? { autoMode: spec.autoMode } : {}),
   };
 }
 
@@ -252,6 +264,7 @@ export function resolveTask(
   }
 
   if (merged.target === undefined) merged.target = DEFAULT_TASK_TARGET;
+  if (merged.agent === undefined) merged.agent = DEFAULT_TASK_AGENT;
 
   return merged;
 }

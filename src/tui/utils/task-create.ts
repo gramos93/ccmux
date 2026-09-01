@@ -35,6 +35,7 @@ export type CreateField =
   | "targetRef"
   | "template"
   | "prompt"
+  | "autoMode"
   | "runNow";
 
 /** The editable state of the create form. */
@@ -50,6 +51,9 @@ export interface CreateFormState {
   /** Template name, or "" for none. */
   template: string;
   prompt: string;
+  /** Launch Claude with `--permission-mode acceptEdits`; a persistent task
+   *  property (unlike `runNow`), so it stays visible while editing. */
+  autoMode: boolean;
   /** Run the task immediately after creating it (off = backlog/pending). */
   runNow: boolean;
 }
@@ -182,6 +186,7 @@ export function buildInitialForm(
     targetRef: "",
     template: "",
     prompt: resolved.prompt ?? "",
+    autoMode: resolved.autoMode ?? false,
     runNow: true,
   };
 }
@@ -195,7 +200,7 @@ export function visibleCreateFieldsFor(
 ): CreateField[] {
   const fields: CreateField[] = ["name", "agent", "project", "target"];
   if (targetNeedsRef(form.target)) fields.push("targetRef");
-  fields.push("template", "prompt");
+  fields.push("template", "prompt", "autoMode");
   if (!opts.editing) fields.push("runNow");
   return fields;
 }
@@ -229,12 +234,17 @@ export interface CreateBody {
   template?: string;
   target: TaskTarget;
   targetRef?: string;
+  autoMode: boolean;
 }
 
 /** Shape a create form into the `POST /tasks` body (pure). `name` is sent only
  *  when non-blank so the daemon derives a default otherwise. */
 export function buildCreateBody(form: CreateFormState): CreateBody {
-  const body: CreateBody = { project: form.project, target: form.target };
+  const body: CreateBody = {
+    project: form.project,
+    target: form.target,
+    autoMode: form.autoMode,
+  };
   if (form.name.trim()) body.name = form.name.trim();
   if (form.agent) body.agent = form.agent;
   if (form.prompt.trim()) body.prompt = form.prompt;
@@ -253,6 +263,7 @@ export interface EditBody {
   project: string;
   target: TaskTarget;
   targetRef?: string;
+  autoMode: boolean;
 }
 
 /** Shape a form into the `POST /tasks/{id}/edit` body (pure). Sends the
@@ -265,6 +276,7 @@ export function buildEditBody(form: CreateFormState): EditBody {
     target: form.target,
     agent: form.agent,
     prompt: form.prompt,
+    autoMode: form.autoMode,
   };
   if (targetNeedsRef(form.target) && form.targetRef) {
     body.targetRef = form.targetRef;
@@ -283,6 +295,7 @@ export function formFromTask(
     project: string;
     target: TaskTarget;
     targetRef?: string;
+    autoMode?: boolean;
   },
   options: CreateOptions,
 ): CreateFormState {
@@ -294,6 +307,7 @@ export function formFromTask(
     targetRef: task.targetRef ?? "",
     template: "",
     prompt: task.prompt,
+    autoMode: task.autoMode ?? false,
     runNow: false,
   };
 }
