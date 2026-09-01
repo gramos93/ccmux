@@ -14,7 +14,7 @@ import type {
   ThemeConfig,
   Preferences,
 } from "../lib/preferences";
-import { applyTheme } from "./theme";
+import { applyThemeAuto } from "./theme";
 import type { GroupBy } from "./utils/grouping";
 import { PERF_ENABLED } from "./utils/perf";
 import { findRestorePane, selectPane } from "./utils/tmux";
@@ -89,7 +89,7 @@ export async function launchTUI(options: TUIOptions = {}): Promise<void> {
 
   // Resolve the theme into the live singleton before any component renders.
   // Launch-time only: no in-TUI toggle, no reactivity.
-  applyTheme(options.theme);
+  applyThemeAuto(options.theme);
 
   const config: CliRendererConfig = {
     useMouse: true,
