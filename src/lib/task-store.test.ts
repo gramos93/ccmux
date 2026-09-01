@@ -160,6 +160,20 @@ describe("task-store patchTask", () => {
     const updated = await updateTaskStatus(created.id, "running");
     expect(updated?.status).toBe("running");
   });
+
+  it("round-trips resolved worktreePath and branch", async () => {
+    const created = await createTask(spec);
+    const patched = await patchTask(created.id, {
+      status: "running",
+      worktreePath: "/bare/feature-x",
+      branch: "feature-x",
+    });
+    expect(patched?.worktreePath).toBe("/bare/feature-x");
+    expect(patched?.branch).toBe("feature-x");
+    const reread = await getTask(created.id);
+    expect(reread?.worktreePath).toBe("/bare/feature-x");
+    expect(reread?.branch).toBe("feature-x");
+  });
 });
 
 describe("task-store isolation", () => {

@@ -50,11 +50,12 @@ describe("Footer", () => {
     expect(frame).toContain("q quit");
   });
 
-  it("renders task-view help text with clone/edit shortcuts", async () => {
+  it("renders task-view help text with clone/edit/done shortcuts", async () => {
     const frame = await renderFooter({ taskView: true });
     expect(frame).toContain("c create");
     expect(frame).toContain("C clone");
     expect(frame).toContain("e edit");
+    expect(frame).toContain("d done");
     expect(frame).toContain("x delete");
     expect(frame).toContain("t sessions");
   });

@@ -87,8 +87,50 @@ ccmux task list                 # copy the prefix you want
 ccmux task run <prefix>
 ```
 
+## 6. Run a task on its own branch/worktree (wtm)
+
+Isolate a task on its own branch. Worktree intent is orthogonal to `--target`; it only changes
+the working directory. Requires a **wtm-managed** repo — ccmux never adopts one for you.
+
+```bash
+REPO=/path/to/wtm-repo
+
+# Explicit branch + base; launches into a branch-named window in the project session.
+ccmux task create --dir "$REPO" --agent claude --branch feat-x --base main --run \
+  --prompt "Implement feature X on its own branch."
+# -> Created task 9a1b…  /  Running task 9a1b… (running)
+#    Agent launches in  <root>/feat-x  ;  worktree reused on resume, never auto-removed.
+
+# Default branch (slug of the task name), default base (origin/HEAD):
+ccmux task create --dir "$REPO" --agent codex --worktree --run \
+  --prompt "Add a --dry-run flag."
+```
+
+If the repo is **not** wtm-managed, the run is refused and the task stays `pending`:
+
+```bash
+ccmux task create --dir /path/to/plain-repo --agent claude --worktree --run \
+  --prompt "..."
+# -> Created task 3c7d…
+#    Failed to run task: /path/to/plain-repo is not a wtm-managed (bare) repository —
+#    run `wtm init` there first, then run this task
+ccmux task list | grep '^3c7d'
+# 3c7d…  pending   claude  /path/to/plain-repo      <- still pending, not failed
+
+# Don't silently adopt. PROPOSE it, confirm a clean tree, then (with the user's OK):
+cd /path/to/plain-repo && git status --porcelain   # must be empty
+wtm init .                                          # plain init; restructures the repo in place.
+                                                    # Keep post_create as a setup stub — it must
+                                                    # NOT launch an agent (ccmux owns the launch;
+                                                    # wtm create always runs post_create).
+# Now the SAME task runs:
+ccmux task run 3c7d
+```
+
 ## Cleaning up
 
 ```bash
 ccmux task rm <prefix>          # delete a task by id or unique prefix
+# Worktrees are NOT removed by ccmux — clean them up with wtm when done:
+#   wtm cleanup            (in the wtm repo; deletes merged worktrees)
 ```

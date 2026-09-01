@@ -15,6 +15,7 @@ import {
 } from "./task-launcher";
 import type { AgentDef } from "../lib/agents";
 import type { TaskInstance } from "../lib/task";
+import { WorktreeError } from "../lib/worktree";
 
 const CWD = tmpdir(); // a real, existing directory so the cwd check passes
 
@@ -203,6 +204,44 @@ describe("buildLaunchCommand", () => {
       ),
     ).toThrow(/no nativeSessionId/);
   });
+
+  it("appends --permission-mode acceptEdits for a fresh claude launch with autoMode", () => {
+    expect(
+      buildLaunchCommand(makeTask({ autoMode: true }), {
+        getAgentByType: () => undefined,
+        prefs: { command: "claude-beta" },
+      }),
+    ).toBe("claude-beta --permission-mode acceptEdits");
+  });
+
+  it("appends --permission-mode acceptEdits when resuming claude with autoMode", () => {
+    expect(
+      buildLaunchCommand(
+        makeTask({ nativeSessionId: "nat-1", autoMode: true }),
+        { getAgentByType: () => undefined, prefs: {} },
+        { resume: true },
+      ),
+    ).toBe("claude --resume nat-1 --permission-mode acceptEdits");
+  });
+
+  it("omits the flag when autoMode is false/unset", () => {
+    expect(
+      buildLaunchCommand(makeTask({ autoMode: false }), {
+        getAgentByType: () => undefined,
+        prefs: {},
+      }),
+    ).toBe("claude");
+  });
+
+  it("does not append the flag for a non-claude agent with autoMode set", () => {
+    expect(
+      buildLaunchCommand(makeTask({ agent: "codex", autoMode: true }), {
+        getAgentByType: () =>
+          ({ executable: "codex-bin" }) as unknown as AgentDef,
+        prefs: {},
+      }),
+    ).toBe("codex-bin");
+  });
 });
 
 describe("session name disambiguation", () => {
@@ -268,16 +307,35 @@ describe("isAgentResumable", () => {
 });
 
 describe("launchTask resume", () => {
-  it("resumes into a fresh new-window with no prompt (re-attach)", async () => {
-    const { runTmux, calls } = fakeTmux({ paneId: "%7", captures: ["$ "] });
+  it("resumes a non-new-session task into the project session (create-or-attach), not the current session", async () => {
+    const proj = mkdtempSync(join(tmpdir(), "ccmux-ns-"));
+    const name = basename(proj);
+    const { runTmux, calls } = fakeTmux({
+      paneId: "%7",
+      captures: ["$ "],
+      sessionExists: false,
+    });
     const rec = recorder();
     const result = await launchTask(
-      makeTask({ target: "split", nativeSessionId: "nat-1" }),
+      // A split task with a pane-id targetRef — the resume must NOT use it as a
+      // session name, and must NOT open a bare new-window in the current session.
+      makeTask({
+        target: "split",
+        project: proj,
+        targetRef: "%3",
+        nativeSessionId: "nat-1",
+      }),
       deps(runTmux, rec, { getAgentByType: () => claudeAgent }),
       { resume: true },
     );
     expect(result.paneId).toBe("%7");
-    expect(calls[0][0]).toBe("new-window"); // forced, not split
+    expect(calls.some((c) => c[0] === "has-session")).toBe(true); // project-session probe
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create).toBeDefined();
+    expect(create).toContain("-s");
+    expect(create).toContain(name); // project-derived name
+    expect(create).not.toContain("%3"); // pane-id targetRef not used as a name
+    expect(calls.some((c) => c[0] === "new-window")).toBe(false); // no current-session window
     expect(rec.literal).toEqual([
       { pane: "%7", text: "claude --resume nat-1", enter: true },
     ]);
@@ -644,5 +702,90 @@ describe("launchTask other targets", () => {
     // The launch command is the resume command.
     expect(rec.literal[0]?.text).toContain("--resume");
     expect(rec.literal[0]?.text).toContain("nat-9");
+  });
+});
+
+describe("launchTask worktree", () => {
+  // A real dir so the pre-launch existence check passes and differs from CWD.
+  const WT = mkdtempSync(join(tmpdir(), "ccmux-wt-"));
+
+  /** A worktree resolver spy returning a fixed path/branch. */
+  function wtResolver(path = WT, branch = "feature-x") {
+    const calls: TaskInstance[] = [];
+    return {
+      calls,
+      resolveWorktree: async (task: TaskInstance) => {
+        calls.push(task);
+        return { path, branch };
+      },
+    };
+  }
+
+  it("new-window launches in the worktree with a branch-named window", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    const res = await launchTask(
+      makeTask({ target: "new-window", worktree: true }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    const create = calls.find((c) => c[0] === "new-window");
+    expect(create).toContain("-c");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(WT);
+    expect(create).toContain("-n");
+    expect(create?.[create.indexOf("-n") + 1]).toBe("feature-x");
+    expect(res.worktreePath).toBe(WT);
+    expect(res.branch).toBe("feature-x");
+    expect(wt.calls.length).toBe(1);
+  });
+
+  it("new-session opens a branch-named window in the project-keyed session", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    await launchTask(
+      makeTask({ target: "new-session", worktree: { branch: "feature-x" } }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    const create = calls.find((c) => c[0] === "new-session");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(WT);
+    expect(create?.[create.indexOf("-n") + 1]).toBe("feature-x");
+    // @ccmux_project stays the repo root, NOT the worktree path.
+    const stamp = calls.find((c) => c[0] === "set-option");
+    expect(stamp?.[stamp.length - 1]).toBe(CWD);
+  });
+
+  it("does not resolve a worktree for a task without worktree intent", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const wt = wtResolver();
+    const res = await launchTask(
+      makeTask({ target: "new-window" }),
+      deps(runTmux, rec, { resolveWorktree: wt.resolveWorktree }),
+    );
+    expect(wt.calls.length).toBe(0);
+    expect(res.worktreePath).toBeUndefined();
+    // cwd is the project root, no -n window name.
+    const create = calls.find((c) => c[0] === "new-window");
+    expect(create?.[create.indexOf("-c") + 1]).toBe(CWD);
+    expect(create).not.toContain("-n");
+  });
+
+  it("a non-wtm block short-circuits before any pane is created", async () => {
+    const { runTmux, calls } = fakeTmux();
+    const rec = recorder();
+    const blocked = async () => {
+      throw new WorktreeError("not-wtm", "not wtm-managed — run wtm init");
+    };
+    const err = await launchTask(
+      makeTask({ target: "new-window", worktree: true }),
+      deps(runTmux, rec, { resolveWorktree: blocked }),
+    ).catch((e) => e);
+    expect(err).toBeInstanceOf(WorktreeError);
+    expect((err as WorktreeError).kind).toBe("not-wtm");
+    // Nothing was created.
+    expect(
+      calls.some((c) => ["new-window", "split-window", "new-session"].includes(c[0])),
+    ).toBe(false);
   });
 });

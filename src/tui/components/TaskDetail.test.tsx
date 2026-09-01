@@ -55,6 +55,33 @@ describe("TaskDetail", () => {
     expect(frame).toContain("error");
   });
 
+  it("shows the resolved worktree path and branch after launch", async () => {
+    const frame = await render(() => (
+      <TaskDetail
+        task={mockTask({
+          worktree: true,
+          worktreePath: "/Users/test/Code/myapp-bare/feature-x",
+          branch: "feature-x",
+        })}
+        width={60}
+      />
+    ));
+    expect(frame).toContain("feature-x");
+    expect(frame).toContain("branch");
+  });
+
+  it("shows only the worktree intent before launch (no resolved path)", async () => {
+    const frame = await render(() => (
+      <TaskDetail
+        task={mockTask({ worktree: { branch: "wip" } })}
+        width={60}
+      />
+    ));
+    // Intent line present, but no resolved "worktree path" field yet.
+    expect(frame).toContain("wip");
+    expect(frame).not.toContain("worktree path");
+  });
+
   it("derives a name from the prompt when none is set", async () => {
     const frame = await render(() => (
       <TaskDetail

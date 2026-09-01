@@ -69,6 +69,21 @@ describe("deriveProject", () => {
     expect(project).not.toBe(basename(worktree));
   });
 
+  it("resolves a bare/wtm worktree (gitdir with no `.git` segment) to the bare repo's basename", () => {
+    // wtm bare layout: the bare repo dir holds `worktrees/<name>` directly (no
+    // `.git/` segment). All its worktrees must group under the bare repo name.
+    const bare = tempDir("myrepo-bare");
+    const worktreesDir = join(bare, "worktrees", "feature-z");
+    mkdirSync(worktreesDir, { recursive: true });
+
+    const worktree = tempDir("wt-bare");
+    writeFileSync(join(worktree, ".git"), `gitdir: ${worktreesDir}\n`);
+
+    const project = deriveProject(worktree, "fallback", { cache: new Map() });
+    expect(project).toBe(basename(bare));
+    expect(project).not.toBe(basename(worktree));
+  });
+
   it("falls back to the submodule's own cwd basename when the gitdir doesn't match the worktrees shape", () => {
     const parent = tempDir("submodule-parent");
     const submoduleGitdir = join(parent, ".git", "modules", "sub");

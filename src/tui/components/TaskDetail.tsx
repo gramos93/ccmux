@@ -107,6 +107,8 @@ export const TaskDetail: Component<TaskDetailProps> = (props) => {
           <Field label="target" value={t().target} />
           <Field label="session" value={sessionName()} />
           <Field label="worktree" value={worktree()} />
+          <Field label="worktree path" value={t().worktreePath ? shortenCwd(t().worktreePath!) : ""} />
+          <Field label="branch" value={t().branch ?? ""} />
           <Field
             label="created"
             value={t().createdAt ? formatRelativeTime(new Date(t().createdAt)) : ""}

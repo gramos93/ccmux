@@ -19,7 +19,7 @@ import {
 } from "../lib/preferences";
 import { VALID_ICON_STYLES, type IconStyle } from "../lib/icons";
 import { BUILTIN_THEME_NAMES, DEFAULT_THEME_NAME } from "../tui/themes";
-import { resolveThemeVerbose } from "../tui/theme";
+import { resolveThemeVerboseAuto } from "../tui/theme";
 
 export const KNOWN_KEYS: Record<
   string,
@@ -464,11 +464,11 @@ export function createConfigCommand(): Command {
     .description("List built-in themes and show the active one")
     .action(async () => {
       const prefs = await getPreferences();
-      // resolveThemeVerbose owns the fallback rule; it reports the effective
-      // base name and whether any override actually survived validation.
-      const { resolvedBase, appliedOverrides, warnings } = resolveThemeVerbose(
-        prefs.theme,
-      );
+      // resolveThemeVerboseAuto owns the fallback rule (and resolves "auto"
+      // against the running tmux server); it reports the effective base name
+      // and whether any override actually survived validation.
+      const { resolvedBase, appliedOverrides, warnings } =
+        resolveThemeVerboseAuto(prefs.theme);
 
       console.log("Built-in themes:");
       for (const name of BUILTIN_THEME_NAMES) {

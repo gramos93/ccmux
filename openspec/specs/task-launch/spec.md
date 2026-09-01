@@ -158,28 +158,38 @@ A task MAY carry a raw `command` argv that the launcher runs verbatim, bypassing
 
 ### Requirement: Resume a stopped task
 
-The daemon SHALL resume a `stopped` task via `POST /tasks/{id}/resume`, relaunching the agent against its retained conversation and setting status back to `running`. A `new-session` task SHALL resume back into its project session — the same create-or-attach behavior as a fresh `new-session` run (create the detached, project-named session when absent; open a new window in it when present) — so its placement is preserved across the stop/resume cycle. Every other target SHALL resume into a fresh `new-window` pane. It SHALL build the agent's resume command — claude uses `<binary> --resume <nativeSessionId>`; any agent with a `resumeCommand` uses that template with `{id}` replaced by `nativeSessionId`. The request MAY include an optional follow-up prompt: when present, the daemon SHALL submit it once the resumed agent is ready (the same ready-then-send used for a fresh run); when absent, no prompt is submitted and the conversation is simply re-attached. The resulting session SHALL re-correlate onto the task (new `paneId`/`sessionId`, `nativeSessionId` preserved).
+The daemon SHALL resume a `stopped` or `done` task via `POST /tasks/{id}/resume`, relaunching the agent against its retained conversation and setting status back to `running`. Resume SHALL always place the relaunched agent into the task's **project-named session** (create-or-attach), never a `new-window` in the currently-attached tmux session — because the task's original pane/window is gone by the time it is resumed. A `new-session` task SHALL resume into its session honoring its explicit `targetRef` name when set, else the project-derived name; every other target SHALL resume into the project-derived session (the tmux-sanitized project basename, path-disambiguated — the same create-or-attach used by a fresh `new-session` run: create the detached, project-named session when absent, open a new window in it when present), ignoring any `targetRef` (which, for `split`/`send-to-existing`, is a pane id, not a session name). It SHALL build the agent's resume command — claude uses `<binary> --resume <nativeSessionId>`; any agent with a `resumeCommand` uses that template with `{id}` replaced by `nativeSessionId`. The request MAY include an optional follow-up prompt: when present, the daemon SHALL submit it once the resumed agent is ready (the same ready-then-send used for a fresh run); when absent, no prompt is submitted and the conversation is simply re-attached. The resulting session SHALL re-correlate onto the task (new `paneId`/`sessionId`, `nativeSessionId` preserved).
 
-Resume SHALL be gated: the task MUST exist (else `404`), MUST be `stopped`, MUST have a `nativeSessionId`, and its agent MUST be resumable (claude, or an agent with a `resumeCommand`). A failing precondition SHALL yield `400` and launch nothing.
+Resume SHALL be gated: the task MUST exist (else `404`), MUST be `stopped` or `done`, MUST have a `nativeSessionId`, and its agent MUST be resumable (claude, or an agent with a `resumeCommand`). A failing precondition SHALL yield `400` and launch nothing. (A `done` task with no `nativeSessionId` — e.g. a completed headless invoke — fails this gate; it is re-launched via run, not resume.)
 
 #### Scenario: Resume a stopped task (re-attach only)
 
 - **WHEN** `POST /tasks/{id}/resume` is called with no follow-up prompt for a `stopped` task whose agent is resumable and which has a `nativeSessionId`
-- **THEN** the agent is relaunched with its resume command in a new pane, no prompt is submitted, the task re-correlates (new `paneId`/`sessionId`, same `nativeSessionId`), its status becomes `running`, and `task_updated` is broadcast
+- **THEN** the agent is relaunched with its resume command into the task's project-named session (create-or-attach), no prompt is submitted, the task re-correlates (new `paneId`/`sessionId`, same `nativeSessionId`), its status becomes `running`, and `task_updated` is broadcast
+
+#### Scenario: Resume a done task
+
+- **WHEN** `POST /tasks/{id}/resume` is called for a `done` task that has a `nativeSessionId` and a resumable agent
+- **THEN** the agent is relaunched against its retained conversation into the project-named session, the task returns to `running`, and `task_updated` is broadcast
+
+#### Scenario: Resume a non-new-session task lands in the project session
+
+- **WHEN** `POST /tasks/{id}/resume` is called for a `stopped`/`done` task whose target is `new-window`, `split`, or `send-to-existing`
+- **THEN** the resume is launched into the project-derived session (created detached if absent, or a new window in it if present) — not a `new-window` in the currently-attached session — and any `targetRef` is ignored for placement
 
 #### Scenario: Resume a new-session task back into its project session
 
 - **WHEN** `POST /tasks/{id}/resume` is called for a `stopped` `new-session` task
-- **THEN** the resume command is launched into the project's session (created detached if absent, or a new window in it if present), rather than a `new-window` in the current session
+- **THEN** the resume command is launched into the project's session (created detached if absent, or a new window in it if present), honoring an explicit `targetRef` session name when set
 
 #### Scenario: Resume with a follow-up prompt
 
 - **WHEN** `POST /tasks/{id}/resume` is called with a follow-up prompt
 - **THEN** after the resumed agent is ready the prompt is submitted into it, and the task returns to `running`
 
-#### Scenario: Resume rejects a non-stopped task
+#### Scenario: Resume rejects a task that is neither stopped nor done
 
-- **WHEN** `POST /tasks/{id}/resume` is called for a task that is not `stopped`
+- **WHEN** `POST /tasks/{id}/resume` is called for a task whose status is `pending`, `running`, or `failed`
 - **THEN** the response is `400` and nothing is launched
 
 #### Scenario: Resume rejects a non-resumable agent
@@ -259,3 +269,57 @@ The tool SHALL provide a `ccmux task` command group to drive tasks against the d
 
 - **WHEN** `ccmux task rm <ref>` is invoked with a full id or unique prefix
 - **THEN** the resolved task is deleted via the daemon
+
+### Requirement: Launch a worktree task in its worktree
+
+When a task carries worktree intent, the daemon SHALL launch the agent with the task's resolved worktree path as the working directory instead of the project root, for every pane target (`new-window`, `split`, `new-session`, and `send-to-existing` where applicable). Worktree resolution is orthogonal to the target: it only substitutes the effective working directory (the `-c` cwd for created panes) and does not otherwise change target semantics. The daemon SHALL persist the resolved worktree path and branch back onto the task instance after a successful launch. The pre-launch working-directory existence check SHALL apply to the resolved worktree path.
+
+Under the **one-session-per-project / one-window-per-worktree** model, a `new-session` worktree task SHALL still key its tmux session on the project (repo/bare root, stamped `@ccmux_project`), and SHALL open a new window in that session rooted at the worktree path and named after the resolved branch. Worktrees of one repository therefore share a single project session rather than fragmenting into separate sessions.
+
+#### Scenario: new-window worktree task launches in the worktree
+
+- **WHEN** a `new-window` task with worktree intent is run
+- **THEN** the pane is created with the resolved worktree path as its cwd, the agent launches there, and the task's resolved `worktreePath` and `branch` are persisted
+
+#### Scenario: new-session worktree task opens a branch-named window in the project session
+
+- **WHEN** a `new-session` task with worktree intent is run
+- **THEN** the tmux session is keyed on the project (stamped `@ccmux_project`) and a new window named after the resolved branch is opened in it, rooted at the worktree path
+
+#### Scenario: Two worktree tasks of one repo share the project session
+
+- **WHEN** two worktree tasks for different branches of the same repository are run
+- **THEN** both land as separate branch-named windows within the same project-keyed tmux session
+
+#### Scenario: A non-wtm repo blocks before any pane is created
+
+- **WHEN** a worktree task is run in a repository that is not wtm-managed
+- **THEN** worktree resolution is attempted before pane creation, the run is refused with the actionable error, no pane/session is created, and the task's status is left `pending` (never set to `running` or `failed`)
+
+### Requirement: Resume re-enters the task's worktree
+
+When resuming a task that has a persisted `worktreePath`, the daemon SHALL relaunch the agent in that same worktree (reusing it via the idempotent resolution) rather than the repo root, keeping the resumed conversation in its original working copy.
+
+#### Scenario: Resume lands back in the worktree
+
+- **WHEN** a stopped worktree task with a persisted `worktreePath` is resumed
+- **THEN** the resume relaunches the agent in that worktree directory (reused, not recreated)
+
+### Requirement: Task CLI worktree flags
+
+The `ccmux task create` command SHALL accept `--worktree`, `--branch <name>`, and `--base <ref>` flags to express worktree intent. `--worktree` alone SHALL send `worktree: true`; `--branch`/`--base` (with or without `--worktree`) SHALL send the object form `{ branch, base }`. Unset flags SHALL be sent as absent so the default cascade and the daemon's branch/base defaulting apply.
+
+#### Scenario: --worktree sets bare intent
+
+- **WHEN** `ccmux task create --worktree ...` is invoked with no branch or base
+- **THEN** the created task's `worktree` is `true`
+
+#### Scenario: --branch/--base set the object form
+
+- **WHEN** `ccmux task create --branch feature-x --base develop ...` is invoked
+- **THEN** the created task's `worktree` is `{ branch: "feature-x", base: "develop" }`
+
+#### Scenario: No worktree flags leaves intent unset
+
+- **WHEN** `ccmux task create` is invoked with none of the worktree flags
+- **THEN** no `worktree` field is sent and the default cascade decides the task's worktree intent

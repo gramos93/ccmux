@@ -21,7 +21,14 @@ import { basename } from "path";
 import { stripAnsi } from "../lib/strip-ansi";
 import { getAgentExecutable, type AgentDef } from "../lib/agents";
 import type { Preferences } from "../lib/preferences";
-import type { TaskInstance } from "../lib/task";
+import { taskDisplayName, type TaskInstance } from "../lib/task";
+import {
+  deriveBranchName,
+  resolveBareRepo,
+  resolveBaseBranch,
+  resolveWorktree,
+  WorktreeError,
+} from "../lib/worktree";
 import { isPromptReady } from "./invokers/helpers";
 import { sendLiteralToPane, sendPromptToPane } from "./pane-io";
 
@@ -29,10 +36,52 @@ const READY_TIMEOUT_MS = 15_000;
 const POLL_INTERVAL_MS = 250;
 const READY_CAPTURE_LINES = 100;
 
-/** Result of a launch: a created-pane id for window/split, empty otherwise. */
+/** Result of a launch: a created-pane id for window/split, empty otherwise.
+ *  When the task launched into a worktree, the resolved `worktreePath` and
+ *  `branch` are set so the manager can persist them. */
 export interface LaunchResult {
   paneId?: string;
+  worktreePath?: string;
+  branch?: string;
 }
+
+/** Resolve a task's worktree to a concrete path + branch, or throw a
+ *  {@link WorktreeError} (`not-wtm` blocks the run; `wtm-missing`/`wtm-failed`
+ *  are environment faults). Injected so the launcher is testable without a live
+ *  git/wtm. */
+export type WorktreeResolver = (
+  task: TaskInstance,
+) => Promise<{ path: string; branch: string }>;
+
+/**
+ * Default {@link WorktreeResolver}: locate the wtm bare root for the task's
+ * project (block with a `not-wtm` error when it is not wtm-managed), resolve the
+ * branch (persisted `branch` or the intent's branch treated as explicit; else a
+ * slug of the task name) and base, then provision-or-reuse the worktree. A
+ * persisted `branch` (resume/re-run) is passed as explicit so the same worktree
+ * is re-entered rather than a new one derived.
+ */
+export const realWorktreeResolver: WorktreeResolver = async (task) => {
+  const bareRoot = await resolveBareRepo(task.project);
+  if (!bareRoot) {
+    throw new WorktreeError(
+      "not-wtm",
+      `${task.project} is not a wtm-managed (bare) repository — run \`wtm init\` there first, then run this task`,
+    );
+  }
+  const intent = task.worktree;
+  const explicitBranch =
+    task.branch ?? (typeof intent === "object" ? intent.branch : undefined);
+  const explicitBase = typeof intent === "object" ? intent.base : undefined;
+  const branch = await deriveBranchName(bareRoot, {
+    explicit: explicitBranch,
+    taskName: taskDisplayName(task),
+    taskId: task.id,
+  });
+  const base = await resolveBaseBranch(bareRoot, { explicit: explicitBase });
+  const resolved = await resolveWorktree(bareRoot, { branch, base });
+  return { path: resolved.path, branch: resolved.branch };
+};
 
 /** Runs `tmux <args>` and returns its exit code + captured output. Injected so
  *  tests can fake tmux. */
@@ -68,6 +117,9 @@ export interface TaskLauncherDeps {
    */
   sendLiteral?: (pane: string, text: string, enter: boolean) => Promise<boolean>;
   sendPrompt?: (pane: string, text: string, enter: boolean) => Promise<boolean>;
+  /** Resolves a worktree task to its path + branch. Defaults to
+   *  {@link realWorktreeResolver}; injected so tests avoid a live git/wtm. */
+  resolveWorktree?: WorktreeResolver;
 }
 
 /** Single-quote-escape one argv token for a POSIX shell. */
@@ -188,7 +240,8 @@ export function buildLaunchCommand(
     const native = task.nativeSessionId;
     if (!native) throw new Error("cannot resume: task has no nativeSessionId");
     if (task.agent === "claude") {
-      return `${deps.prefs.command ?? "claude"} --resume ${native}`;
+      const base = `${deps.prefs.command ?? "claude"} --resume ${native}`;
+      return task.autoMode ? `${base} --permission-mode acceptEdits` : base;
     }
     const agent = deps.getAgentByType(task.agent);
     if (agent?.resumeCommand) return agent.resumeCommand.replace("{id}", native);
@@ -198,7 +251,8 @@ export function buildLaunchCommand(
     return task.command.map(shellQuote).join(" ");
   }
   if (task.agent === "claude") {
-    return deps.prefs.command ?? "claude";
+    const base = deps.prefs.command ?? "claude";
+    return task.autoMode ? `${base} --permission-mode acceptEdits` : base;
   }
   const agent = deps.getAgentByType(task.agent);
   return agent?.executable ?? getAgentExecutable(task.agent);
@@ -217,9 +271,10 @@ async function capture(deps: TaskLauncherDeps, paneId: string): Promise<string> 
 }
 
 /** Options for {@link launchTask}. `resume` launches the agent's resume
- *  command (into the task's project session for a `new-session` task, else a
- *  fresh new-window); `prompt` (when set) is submitted after the agent is
- *  ready (a follow-up turn). */
+ *  command into the task's project-named session (create-or-attach) — the
+ *  original pane is gone by resume time — honoring an explicit `targetRef`
+ *  session name only for a `new-session` task; `prompt` (when set) is submitted
+ *  after the agent is ready (a follow-up turn). */
 export interface LaunchOpts {
   resume?: boolean;
   prompt?: string;
@@ -229,8 +284,8 @@ export interface LaunchOpts {
  * Launch a task into a pane. Without `opts`, launches per the task's target
  * (`new-window`/`split`, a project-named `new-session` created-or-attached, or
  * `send-to-existing`). With `opts.resume`, launches the agent's resume command
- * — into the project session for a `new-session` task, else a fresh
- * `new-window` — and submits `opts.prompt` only if one was given. Throws on an
+ * into the task's project-named session (create-or-attach, since the original
+ * pane is gone) and submits `opts.prompt` only if one was given. Throws on an
  * unsupported target, a missing working directory, a missing `targetRef` for
  * `send-to-existing`, or a tmux failure.
  */
@@ -244,12 +299,37 @@ export async function launchTask(
     deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
   const sendLiteral = deps.sendLiteral ?? sendLiteralToPane;
   const sendPrompt = deps.sendPrompt ?? sendPromptToPane;
+  const resolveWorktreeFn = deps.resolveWorktree ?? realWorktreeResolver;
+
+  // Resolve the worktree FIRST (before any pane is created), so a non-wtm repo
+  // throws `not-wtm` and short-circuits with nothing launched. The worktree
+  // path becomes the effective working directory for every target; the branch
+  // names the created window. A task without worktree intent keeps its project
+  // root as the working directory, exactly as before.
+  let effectiveCwd = task.project;
+  let resolvedBranch: string | undefined;
+  if (task.worktree) {
+    const wt = await resolveWorktreeFn(task);
+    effectiveCwd = wt.path;
+    resolvedBranch = wt.branch;
+  }
+  // Worktree correlation to fold into every launch result so the manager can
+  // persist it (empty for a non-worktree task).
+  const wtFields: Pick<LaunchResult, "worktreePath" | "branch"> = resolvedBranch
+    ? { worktreePath: effectiveCwd, branch: resolvedBranch }
+    : {};
+  // A branch-named window for worktree launches (one window per worktree);
+  // omitted for a non-worktree task so window naming is unchanged.
+  const windowNameArgv = resolvedBranch ? ["-n", resolvedBranch] : [];
 
   // Static create argv for the current-session pane targets (new-window/split).
+  // `split-window` does not accept `-n`, so window naming applies to new-window
+  // only.
   const paneCreateArgv = (tmuxCmd: "new-window" | "split-window"): string[] => [
     tmuxCmd,
+    ...(tmuxCmd === "new-window" ? windowNameArgv : []),
     "-c",
-    task.project,
+    effectiveCwd,
     "-P",
     "-F",
     "#{pane_id}",
@@ -267,8 +347,15 @@ export async function launchTask(
   const runNewSession = async (
     launchCommand: string,
     promptToSend: string | undefined,
+    honorTargetRef = true,
   ): Promise<LaunchResult> => {
-    const explicit = task.targetRef ? sanitizeTmuxName(task.targetRef) : "";
+    // `honorTargetRef` is true for a fresh new-session run and a new-session
+    // resume (the explicit `targetRef` names the session). It is false when
+    // resuming a non-new-session task, whose `targetRef` (if any) is a pane id,
+    // not a session name — such a resume lands in the project-derived session.
+    const explicit = honorTargetRef && task.targetRef
+      ? sanitizeTmuxName(task.targetRef)
+      : "";
     const { name, exists } = explicit
       ? {
           name: explicit,
@@ -277,10 +364,12 @@ export async function launchTask(
             0,
         }
       : await resolveProjectSession(deps, task.project);
+    // A worktree launch opens a branch-named window in the (project-keyed)
+    // session — one project session, one window per worktree.
     const head = exists
-      ? ["new-window", "-t", name]
-      : ["new-session", "-d", "-s", name];
-    const argv = [...head, "-c", task.project, "-P", "-F", "#{pane_id}"];
+      ? ["new-window", ...windowNameArgv, "-t", name]
+      : ["new-session", "-d", "-s", name, ...windowNameArgv];
+    const argv = [...head, "-c", effectiveCwd, "-P", "-F", "#{pane_id}"];
     const result = await runInPane(argv, launchCommand, promptToSend);
     if (!exists) {
       // `set-option` does NOT accept the `=name` exact-match form (only
@@ -306,9 +395,10 @@ export async function launchTask(
     promptToSend: string | undefined,
   ): Promise<LaunchResult> => {
     // Verify the working directory exists before spawning; it may have been
-    // deleted between create and run (the CLI also fast-checks at create).
-    if (!existsSync(task.project) || !statSync(task.project).isDirectory()) {
-      throw new Error(`Working directory does not exist: ${task.project}`);
+    // deleted between create and run (the CLI also fast-checks at create). For a
+    // worktree task this is the resolved worktree path.
+    if (!existsSync(effectiveCwd) || !statSync(effectiveCwd).isDirectory()) {
+      throw new Error(`Working directory does not exist: ${effectiveCwd}`);
     }
     const create = await deps.runTmux(createArgv);
     if (create.code !== 0) {
@@ -341,18 +431,23 @@ export async function launchTask(
         throw new Error("failed to send prompt to pane");
       }
     }
-    return { paneId };
+    return { paneId, ...wtFields };
   };
 
   // Resume: resume command + optional follow-up prompt. A new-session task
   // resumes back into its project session (create-or-attach); every other
-  // target resumes into a fresh new-window.
+  // target resumes into the project-named session too (create-or-attach).
   if (opts.resume) {
     const launchCommand = buildLaunchCommand(task, deps, { resume: true });
-    if (task.target === "new-session") {
-      return runNewSession(launchCommand, opts.prompt);
-    }
-    return runInPane(paneCreateArgv("new-window"), launchCommand, opts.prompt);
+    // The original pane/window is gone by resume time, so every target lands in
+    // the project-named session (create-or-attach), never a new-window in the
+    // currently-attached session. new-session honors its explicit targetRef
+    // name; other targets use the project-derived name.
+    return runNewSession(
+      launchCommand,
+      opts.prompt,
+      task.target === "new-session",
+    );
   }
 
   if (task.target === "new-window" || task.target === "split") {
@@ -381,7 +476,7 @@ export async function launchTask(
         ? await sendLiteral(task.targetRef, task.command.map(shellQuote).join(" "), true)
         : await sendPrompt(task.targetRef, task.prompt, true);
     if (!ok) throw new Error("failed to send to pane");
-    return {};
+    return { ...wtFields };
   }
 
   if (task.target === "background") {

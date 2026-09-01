@@ -24,7 +24,15 @@ import {
  *  timestamps, and the correlation link fields). */
 export type EditableTaskFields = Pick<
   TaskSpec,
-  "name" | "prompt" | "agent" | "project" | "target" | "targetRef" | "worktree" | "command"
+  | "name"
+  | "prompt"
+  | "agent"
+  | "project"
+  | "target"
+  | "targetRef"
+  | "worktree"
+  | "command"
+  | "autoMode"
 >;
 
 const EDITABLE_FIELDS: (keyof EditableTaskFields)[] = [
@@ -36,6 +44,7 @@ const EDITABLE_FIELDS: (keyof EditableTaskFields)[] = [
   "targetRef",
   "worktree",
   "command",
+  "autoMode",
 ];
 
 /**
@@ -165,7 +174,13 @@ export async function patchTask(
   patch: Partial<
     Pick<
       TaskInstance,
-      "status" | "paneId" | "sessionId" | "nativeSessionId" | "invocationId"
+      | "status"
+      | "paneId"
+      | "sessionId"
+      | "nativeSessionId"
+      | "invocationId"
+      | "worktreePath"
+      | "branch"
     >
   >,
 ): Promise<TaskInstance | undefined> {

@@ -2679,6 +2679,7 @@ describe("store", () => {
       targetRef: "",
       template: "",
       prompt: "",
+      autoMode: false,
       runNow: true,
     };
     const options = {
@@ -2755,6 +2756,16 @@ describe("store", () => {
       expect(store.state.createForm.runNow).toBe(true);
       store.actions.cycleCreateField("runNow", 1);
       expect(store.state.createForm.runNow).toBe(false);
+    });
+
+    it("autoMode toggles via cycleCreateField", () => {
+      const store = createTUIStore({ groupBy: "none" });
+      store.actions.openCreateModal({ ...form }, options);
+      expect(store.state.createForm.autoMode).toBe(false);
+      store.actions.cycleCreateField("autoMode", 1);
+      expect(store.state.createForm.autoMode).toBe(true);
+      store.actions.cycleCreateField("autoMode", -1);
+      expect(store.state.createForm.autoMode).toBe(false);
     });
 
     it("createFormValid gates on prompt/template and a resolved pane", () => {
