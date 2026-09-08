@@ -5,6 +5,7 @@ import { join } from "path";
 import { setNowForTests } from "../lib/task-store";
 import { TaskManager, type TaskManagerEvent } from "./task-manager";
 import type { TaskInstance } from "../lib/task";
+import { WorktreeError } from "../lib/worktree";
 import { taskEventToSSE } from "./server";
 
 const savedStateHome = process.env.CCMUX_STATE_HOME;
@@ -276,11 +277,25 @@ describe("TaskManager.resume", () => {
     expect(events).toEqual([{ kind: "updated", task: resumed! }]);
   });
 
-  it("rejects resuming a task that is not stopped", async () => {
+  it("resumes a done task that retains a nativeSessionId → running", async () => {
+    const launch = async (_t: unknown, opts?: { resume?: boolean }) => ({
+      paneId: opts?.resume ? "%99" : "%42",
+    });
+    const { tm, id } = await stoppedTask(launch);
+    await tm.updateStatus(id, "done"); // mark it done (keeps nativeSessionId)
+    expect((await tm.get(id))?.status).toBe("done");
+
+    const resumed = await tm.resume(id);
+    expect(resumed?.status).toBe("running");
+    expect(resumed?.paneId).toBe("%99");
+    expect(resumed?.nativeSessionId).toBe("nat-1");
+  });
+
+  it("rejects resuming a task that is neither stopped nor done", async () => {
     const tm = new TaskManager({ launch: async () => ({ paneId: "%42" }) });
     const created = await tm.create(body);
-    await tm.run(created.id); // running, not stopped
-    await expect(tm.resume(created.id)).rejects.toThrow(/not stopped/);
+    await tm.run(created.id); // running, not stopped/done
+    await expect(tm.resume(created.id)).rejects.toThrow(/not stopped or done/);
   });
 
   it("returns undefined for an unknown id", async () => {
@@ -436,5 +451,57 @@ describe("TaskManager.edit", () => {
     const tm = new TaskManager();
     const res = await tm.edit("nope", { name: "x" });
     expect(res).toEqual({ ok: false, reason: "not-found" });
+  });
+});
+
+describe("TaskManager worktree persistence + block gate", () => {
+  it("persists resolved worktreePath/branch from the launch result on run", async () => {
+    const tm = new TaskManager({
+      launch: async () => ({
+        paneId: "%7",
+        worktreePath: "/bare/feature-x",
+        branch: "feature-x",
+      }),
+    });
+    const created = await tm.create({ ...body, worktree: true });
+    const ran = await tm.run(created.id);
+    expect(ran?.status).toBe("running");
+    expect(ran?.worktreePath).toBe("/bare/feature-x");
+    expect(ran?.branch).toBe("feature-x");
+  });
+
+  it("a non-wtm block leaves the task pending and emits no running/failed", async () => {
+    const tm = new TaskManager({
+      launch: async () => {
+        throw new WorktreeError("not-wtm", "not wtm-managed — run wtm init");
+      },
+    });
+    const created = await tm.create({ ...body, worktree: true });
+    const events: TaskManagerEvent[] = [];
+    tm.on("change", (e: TaskManagerEvent) => events.push(e));
+
+    const err = await tm.run(created.id).catch((e) => e);
+    expect(err).toBeInstanceOf(WorktreeError);
+    // Status untouched — still pending, never running/failed.
+    expect((await tm.get(created.id))?.status).toBe("pending");
+    expect(events).toHaveLength(0);
+  });
+
+  it("the same task runs after the repo becomes wtm-managed", async () => {
+    let blocked = true;
+    const tm = new TaskManager({
+      launch: async () => {
+        if (blocked) throw new WorktreeError("not-wtm", "run wtm init");
+        return { paneId: "%9", worktreePath: "/bare/x", branch: "x" };
+      },
+    });
+    const created = await tm.create({ ...body, worktree: true });
+    await tm.run(created.id).catch(() => {});
+    expect((await tm.get(created.id))?.status).toBe("pending");
+
+    blocked = false; // dev ran wtm init
+    const ran = await tm.run(created.id);
+    expect(ran?.status).toBe("running");
+    expect(ran?.worktreePath).toBe("/bare/x");
   });
 });

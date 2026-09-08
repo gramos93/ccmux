@@ -464,6 +464,8 @@ For per-key tweaks, set `theme` to an object in `~/.config/ccmux/ccmux.json`: a 
 
 An unknown base name falls back to the default theme; an invalid hex value or unknown override key is dropped and the base value is kept. Each emits a warning. Run `ccmux config themes` to inspect any problems with the current config.
 
+Set `theme` to `"auto"` (or `{"base": "auto", ...}` with overrides) to sync with the running tmux server's theme instead of picking a palette by hand. At launch, ccmux probes tmux's `window-style`/`pane-border-style`/`status-style` options for a background color, then substitutes the closest built-in palette in the matching light/dark family. It's a one-shot detection at launch, not a live sync — and a heuristic, not a guarantee: minimal tmux configs with no styled options fall back to the default theme (with a warning), and configs that only style the status bar's accent color may occasionally pick a slightly different palette than expected. Run `ccmux config themes` to see what `"auto"` currently resolves to.
+
 > [!NOTE]
 > ccmux paints no background fill, so theme colors sit on your terminal's own background. The light palettes (`catppuccin-latte`, `tokyo-night-day`, `gruvbox-light`, `rose-pine-dawn`) assume a light terminal; pair them with a light background. Every other palette assumes a dark one.
 

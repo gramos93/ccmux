@@ -38,6 +38,7 @@ const FIELD_LABEL: Record<CreateField, string> = {
   targetRef: "Pane",
   template: "Template",
   prompt: "Prompt",
+  autoMode: "Auto mode",
   runNow: "Run now",
 };
 
@@ -57,6 +58,8 @@ function displayValue(field: CreateField, props: TaskCreateModalProps): string {
     }
     case "template":
       return `‹ ${f.template || "(none)"} ›`;
+    case "autoMode":
+      return f.autoMode ? "[x]" : "[ ]";
     case "runNow":
       return f.runNow ? "[x]" : "[ ]";
     default:

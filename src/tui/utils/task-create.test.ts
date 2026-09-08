@@ -28,6 +28,7 @@ function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
     targetRef: "",
     template: "",
     prompt: "",
+    autoMode: false,
     runNow: true,
     ...overrides,
   };
@@ -98,6 +99,7 @@ describe("buildCreateBody", () => {
       target: "new-window",
       agent: "claude",
       prompt: "do it",
+      autoMode: false,
     });
     expect("targetRef" in body).toBe(false);
     expect("template" in body).toBe(false);
@@ -151,11 +153,43 @@ describe("resolveTaskActivation", () => {
       ),
     ).toEqual({ kind: "jump", sessionId: "sess-9" });
   });
-  it("is a no-op for a running task with no session, and for done/failed", () => {
+  it("revives a done task with a gone pane: resume when it has a nativeSessionId, else run", () => {
+    // No live session passed → pane is gone.
+    expect(
+      resolveTaskActivation(
+        mockTask({ id: "d1", status: "done", nativeSessionId: "nat-1" }),
+      ),
+    ).toEqual({ kind: "resume", id: "d1" });
+    expect(
+      resolveTaskActivation(
+        mockTask({ id: "d2", status: "done", nativeSessionId: undefined }),
+      ),
+    ).toEqual({ kind: "run", id: "d2" });
+  });
+
+  it("jumps to a done task's pane when its linked session is still live", () => {
+    const task = mockTask({
+      id: "d3",
+      status: "done",
+      nativeSessionId: "nat-3",
+      sessionId: "sess-3",
+    });
+    const live = mockEnrichedSession({ id: "sess-3", tmuxPane: "%5" });
+    expect(resolveTaskActivation(task, live)).toEqual({
+      kind: "jump",
+      sessionId: "sess-3",
+    });
+    // Same task, but no live session → resume (pane gone).
+    expect(resolveTaskActivation(task, null)).toEqual({
+      kind: "resume",
+      id: "d3",
+    });
+  });
+
+  it("is a no-op for a running task with no session, and for failed", () => {
     expect(resolveTaskActivation(mockTask({ status: "running" })).kind).toBe(
       "none",
     );
-    expect(resolveTaskActivation(mockTask({ status: "done" })).kind).toBe("none");
     expect(resolveTaskActivation(mockTask({ status: "failed" })).kind).toBe(
       "none",
     );

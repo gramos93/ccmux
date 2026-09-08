@@ -551,14 +551,24 @@ export function App(props: AppProps) {
     });
   }
 
-  /** Resume the selected stopped task (re-attach). Fire-and-forget; the
-   *  task_updated broadcast flips the row to running. No-op unless stopped. */
+  /** Resume the selected task (re-attach). Fire-and-forget; the task_updated
+   *  broadcast flips the row to running. Applies to `stopped` and revivable
+   *  `done` tasks (the daemon gates on a retained nativeSessionId). */
   function resumeSelectedTask() {
     const task = store.state.tasks.find(
       (t) => t.id === store.state.selectedTaskId,
     );
-    if (!task || task.status !== "stopped") return;
+    if (!task || (task.status !== "stopped" && task.status !== "done")) return;
     postJson(`/tasks/${task.id}/resume`, {}).catch(() => {});
+  }
+
+  /** Mark the selected task `done` (a completion marker, not a delete): POST
+   *  the status, no teardown, no confirmation. The task stays on the board and
+   *  moves to the `done` group when the task_updated broadcast arrives. */
+  function markDoneSelectedTask() {
+    const id = store.selectedTask()?.id ?? store.state.selectedTaskId;
+    if (!id) return;
+    postJson(`/tasks/${id}/status`, { status: "done" }).catch(() => {});
   }
 
   /** Run a pending task by id. Fire-and-forget; the task_updated broadcast
@@ -574,7 +584,12 @@ export function App(props: AppProps) {
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task) return;
-    const action = resolveTaskActivation(task);
+    const action = resolveTaskActivation(
+      task,
+      task.sessionId ? getSessionById(task.sessionId) : null,
+    );
+    // `r` handles only run/resume; a `jump` (live done/running row) is a no-op
+    // here — reach that pane via Enter (activate).
     if (action.kind === "run") runTaskById(action.id);
     else if (action.kind === "resume") resumeSelectedTask();
   }
@@ -595,7 +610,10 @@ export function App(props: AppProps) {
       (t) => t.id === store.state.selectedTaskId,
     );
     if (!task) return;
-    const action = resolveTaskActivation(task);
+    const action = resolveTaskActivation(
+      task,
+      task.sessionId ? getSessionById(task.sessionId) : null,
+    );
     if (action.kind === "run") {
       runTaskById(action.id);
     } else if (action.kind === "resume") {
@@ -1226,6 +1244,9 @@ export function App(props: AppProps) {
         openEditModal();
       } else if (key === "C" || (key === "c" && event.shift)) {
         openCloneModal();
+      } else if (key === "d" && !event.ctrl) {
+        // Mark done (ctrl-d stays the preview half-page scroll below).
+        markDoneSelectedTask();
       } else if (key === "x") {
         deleteSelectedTask();
       } else if (key === "b") {
@@ -1636,31 +1657,35 @@ export function App(props: AppProps) {
               iconStyle={store.state.iconStyle}
             />
             <Show when={!props.sidebar && store.state.showPreview}>
+              {/* Plain-child (not render-prop) Shows: the child re-reads the
+                  memo instead of a narrowed accessor. The render-prop form
+                  throws Solid's "Stale read from <Show>." when the child also
+                  reads a volatile signal (`previewRefreshKey()`) and re-runs
+                  after `when` flips falsy — e.g. a selected running task whose
+                  session unbinds while a delayed refresh bump lands. A plain
+                  child is disposed cleanly on the flip and never re-reads a
+                  stale accessor. */}
               <Show
                 when={selectedTaskLiveSession()}
                 fallback={
                   <Show when={store.selectedTask()}>
-                    {(task: () => TaskInstance) => (
-                      <TaskDetail
-                        task={task()}
-                        width={store.state.previewWidth}
-                        focused={store.state.previewFocused}
-                        onScrollboxRef={(ref) => (previewScrollbox = ref)}
-                      />
-                    )}
+                    <TaskDetail
+                      task={store.selectedTask()!}
+                      width={store.state.previewWidth}
+                      focused={store.state.previewFocused}
+                      onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                    />
                   </Show>
                 }
               >
-                {(session: () => EnrichedSession) => (
-                  <Preview
-                    session={session()}
-                    onScrollboxRef={(ref) => (previewScrollbox = ref)}
-                    iconStyle={store.state.iconStyle}
-                    width={store.state.previewWidth}
-                    focused={store.state.previewFocused}
-                    refreshKey={previewRefreshKey()}
-                  />
-                )}
+                <Preview
+                  session={selectedTaskLiveSession()!}
+                  onScrollboxRef={(ref) => (previewScrollbox = ref)}
+                  iconStyle={store.state.iconStyle}
+                  width={store.state.previewWidth}
+                  focused={store.state.previewFocused}
+                  refreshKey={previewRefreshKey()}
+                />
               </Show>
             </Show>
           </Show>

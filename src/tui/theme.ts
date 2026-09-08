@@ -9,6 +9,7 @@ import {
   BUILTIN_THEME_NAMES,
   DEFAULT_THEME_NAME,
 } from "./themes";
+import { detectTmuxTheme } from "./themes/detect";
 
 /**
  * Live TUI palette. Mutable on purpose: `applyTheme()` overwrites its keys in
@@ -35,6 +36,23 @@ export interface ThemeResolution {
   warnings: string[];
 }
 
+/** Extracts the requested base name plus override maps from a {@link ThemeConfig}. */
+function splitThemeConfig(config: ThemeConfig | undefined): {
+  baseName: string;
+  colors?: Partial<SemanticColors>;
+  ansi?: Partial<Ansi16>;
+} {
+  if (typeof config === "string") return { baseName: config };
+  if (config && typeof config === "object") {
+    return {
+      baseName: config.base ?? DEFAULT_THEME_NAME,
+      colors: config.colors,
+      ansi: config.ansi,
+    };
+  }
+  return { baseName: DEFAULT_THEME_NAME };
+}
+
 /**
  * Resolve a {@link ThemeConfig} into a concrete palette, collecting warnings
  * instead of printing them. Fail-soft: an unknown base falls back to the
@@ -45,18 +63,7 @@ export function resolveThemeVerbose(
   config: ThemeConfig | undefined,
 ): ThemeResolution {
   const warnings: string[] = [];
-
-  let baseName = DEFAULT_THEME_NAME;
-  let colors: Partial<SemanticColors> | undefined;
-  let ansi: Partial<Ansi16> | undefined;
-
-  if (typeof config === "string") {
-    baseName = config;
-  } else if (config && typeof config === "object") {
-    baseName = config.base ?? DEFAULT_THEME_NAME;
-    colors = config.colors;
-    ansi = config.ansi;
-  }
+  const { baseName, colors, ansi } = splitThemeConfig(config);
 
   let base = BUILTIN_THEMES[baseName];
   let resolvedBase = baseName;
@@ -127,6 +134,54 @@ export function resolveTheme(config?: ThemeConfig): ThemePalette {
  */
 export function applyTheme(config?: ThemeConfig): void {
   const { palette, warnings } = resolveThemeVerbose(config);
+  for (const w of warnings) console.error(`ccmux: theme: ${w}`);
+  Object.assign(theme, palette.semantic);
+  Object.assign(theme.ansi, palette.ansi);
+}
+
+/** Runs a tmux command synchronously, returning stdout or null on failure. */
+function runTmuxSync(args: string[]): string | null {
+  try {
+    const result = Bun.spawnSync(["tmux", ...args], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    if (!result.success) return null;
+    return result.stdout.toString();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Like {@link resolveThemeVerbose}, but resolves a `"auto"` base (or `{base:
+ * "auto", ...}`) by probing the running tmux server for its theme and
+ * substituting the closest built-in palette before delegating. Non-`"auto"`
+ * configs are passed straight through to `resolveThemeVerbose`, unchanged.
+ */
+export function resolveThemeVerboseAuto(
+  config: ThemeConfig | undefined,
+  runTmux: (args: string[]) => string | null = runTmuxSync,
+): ThemeResolution {
+  const { baseName, colors, ansi } = splitThemeConfig(config);
+  if (baseName !== "auto") return resolveThemeVerbose(config);
+
+  const detected = detectTmuxTheme(runTmux);
+  const resolvedName = detected.themeName ?? DEFAULT_THEME_NAME;
+  const substituted: ThemeConfig = { base: resolvedName, colors, ansi };
+  const result = resolveThemeVerbose(substituted);
+
+  const pickedNote =
+    detected.themeName && detected.source
+      ? `auto: detected via ${detected.source}, picked "${resolvedName}"`
+      : `auto: ${detected.warnings.join("; ") || "detection failed"}; using ${resolvedName}`;
+
+  return { ...result, warnings: [pickedNote, ...result.warnings] };
+}
+
+/** Like {@link applyTheme}, but resolves `"auto"` via {@link resolveThemeVerboseAuto}. */
+export function applyThemeAuto(config?: ThemeConfig): void {
+  const { palette, warnings } = resolveThemeVerboseAuto(config);
   for (const w of warnings) console.error(`ccmux: theme: ${w}`);
   Object.assign(theme, palette.semantic);
   Object.assign(theme.ansi, palette.ansi);

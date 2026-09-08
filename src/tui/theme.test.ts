@@ -4,6 +4,7 @@ import {
   theme,
   resolveTheme,
   resolveThemeVerbose,
+  resolveThemeVerboseAuto,
   applyTheme,
   resetTheme,
 } from "./theme";
@@ -143,5 +144,45 @@ describe("applyTheme / resetTheme", () => {
     resetTheme();
     expect(theme.green).toBe(catppuccinMocha.semantic.green);
     expect(theme.ansi.black).toBe(catppuccinMocha.ansi.black);
+  });
+});
+
+describe("resolveThemeVerboseAuto", () => {
+  it("resolves a non-auto config identically to resolveThemeVerbose, without calling runTmux", () => {
+    let called = false;
+    const runTmux = (_args: string[]) => {
+      called = true;
+      return null;
+    };
+    const result = resolveThemeVerboseAuto("catppuccin-latte", runTmux);
+    expect(result.resolvedBase).toBe("catppuccin-latte");
+    expect(called).toBe(false);
+  });
+
+  it("substitutes the detected base for a bare 'auto' config", () => {
+    const runTmux = (args: string[]) =>
+      args[2] === "status-style" ? "bg=#1e1e2f" : null;
+    const result = resolveThemeVerboseAuto("auto", runTmux);
+    expect(result.resolvedBase).toBe("catppuccin-mocha");
+    expect(result.warnings[0]).toMatch(/^auto: detected via status-style bg/);
+  });
+
+  it("applies colors/ansi overrides on top of the auto-detected base", () => {
+    const runTmux = (args: string[]) =>
+      args[2] === "status-style" ? "bg=#1e1e2f" : null;
+    const result = resolveThemeVerboseAuto(
+      { base: "auto", colors: { red: "#ff5555" } },
+      runTmux,
+    );
+    expect(result.resolvedBase).toBe("catppuccin-mocha");
+    expect(result.palette.semantic.red).toBe("#ff5555");
+    expect(result.appliedOverrides).toBe(true);
+  });
+
+  it("falls back to the default theme with a warning when detection fails", () => {
+    const runTmux = (_args: string[]) => null;
+    const result = resolveThemeVerboseAuto("auto", runTmux);
+    expect(result.resolvedBase).toBe("catppuccin-mocha");
+    expect(result.warnings[0]).toMatch(/^auto: /);
   });
 });

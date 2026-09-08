@@ -283,6 +283,12 @@ export interface ThemePalette {
  * `base` plus optional per-key overrides deep-merged over it. Mirrors the
  * simple-or-object union used by `columns`. `base` defaults to the default
  * theme. Override keys are the 14 semantic keys and the 16 ANSI keys.
+ *
+ * `base: "auto"` (or the bare string `"auto"`) detects the running tmux
+ * server's theme (status bar / pane border / window colors) once at launch
+ * and substitutes the closest built-in palette; falls back to the default
+ * theme with a warning if detection fails or ccmux isn't running inside
+ * tmux. See `resolveThemeVerboseAuto` in `src/tui/theme.ts`.
  */
 export type ThemeConfig =
   | string
@@ -338,10 +344,11 @@ export interface Preferences {
   notifications?: NotificationsConfig;
   /**
    * TUI color theme, resolved once at launch (no in-TUI toggle). A built-in
-   * name (e.g. `"catppuccin-latte"`) or an object with a `base` plus per-key
-   * `colors`/`ansi` overrides. An unknown base falls back to the default theme;
-   * an invalid hex value or unknown override key is dropped (base value kept),
-   * each with a warning. See `resolveTheme` in `src/tui/theme.ts`.
+   * name (e.g. `"catppuccin-latte"`), `"auto"` to sync with the running tmux
+   * theme, or an object with a `base` plus per-key `colors`/`ansi` overrides.
+   * An unknown base falls back to the default theme; an invalid hex value or
+   * unknown override key is dropped (base value kept), each with a warning.
+   * See `resolveThemeVerboseAuto` in `src/tui/theme.ts`.
    */
   theme?: ThemeConfig;
   /**

@@ -131,6 +131,7 @@ const EMPTY_CREATE_FORM: CreateFormState = {
   targetRef: "",
   template: "",
   prompt: "",
+  autoMode: false,
   runNow: true,
 };
 
@@ -1091,12 +1092,16 @@ export function createTUIStore(options: TUIStoreOptions = {}) {
       setState("createFocusIndex", next);
     },
 
-    /** Cycle a field's value by `dir` (±1). Toggles `runNow`; wraps through the
-     *  option list for the cyclable ones; no-op for `prompt`. Cycling `target`
-     *  or `project` drops a now-stale target-ref. */
+    /** Cycle a field's value by `dir` (±1). Toggles `runNow`/`autoMode`; wraps
+     *  through the option list for the cyclable ones; no-op for `prompt`.
+     *  Cycling `target` or `project` drops a now-stale target-ref. */
     cycleCreateField(field: CreateField, dir: number) {
       if (field === "runNow") {
         setState("createForm", "runNow", !state.createForm.runNow);
+        return;
+      }
+      if (field === "autoMode") {
+        setState("createForm", "autoMode", !state.createForm.autoMode);
         return;
       }
       if (field === "prompt") return;

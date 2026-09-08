@@ -28,6 +28,7 @@ function form(overrides: Partial<CreateFormState> = {}): CreateFormState {
     targetRef: "",
     template: "",
     prompt: "",
+    autoMode: false,
     runNow: true,
     ...overrides,
   };

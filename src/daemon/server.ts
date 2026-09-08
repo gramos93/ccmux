@@ -21,6 +21,7 @@ import type { AttentionTracker } from "./attention-tracker";
 import type { InvocationManager, InvocationEvent } from "./invocation-manager";
 import type { TaskManager, TaskManagerEvent } from "./task-manager";
 import { VALID_TASK_STATUSES, type TaskStatus } from "../lib/task";
+import { WorktreeError } from "../lib/worktree";
 import type { EditableTaskFields } from "../lib/task-store";
 import { readInvocationResult } from "./invocation-results";
 import { INVOCATION_ID_PATTERN } from "../lib/invoke-helpers";
@@ -1076,8 +1077,16 @@ export class DaemonServer {
       }
       return Response.json({ success: true, task }, { headers });
     } catch (err) {
-      // Launcher errors (unsupported target, missing targetRef, tmux failure)
-      // are caller mistakes or environment faults → 400.
+      // A worktree block/fault (non-wtm repo, wtm missing/failed) is a
+      // precondition, not a malformed request: the task is left unchanged
+      // (still pending) and re-runnable → 409. Other launcher errors
+      // (unsupported target, missing targetRef, tmux failure) → 400.
+      if (err instanceof WorktreeError) {
+        return Response.json(
+          { success: false, message: err.message, kind: err.kind },
+          { status: 409, headers },
+        );
+      }
       return Response.json(
         { success: false, message: (err as Error).message },
         { status: 400, headers },
@@ -1108,6 +1117,13 @@ export class DaemonServer {
       }
       return Response.json({ success: true, task }, { headers });
     } catch (err) {
+      // A worktree block/fault is a precondition (task left unchanged) → 409.
+      if (err instanceof WorktreeError) {
+        return Response.json(
+          { success: false, message: err.message, kind: err.kind },
+          { status: 409, headers },
+        );
+      }
       // Not stopped / no nativeSessionId / non-resumable agent / tmux failure.
       return Response.json(
         { success: false, message: (err as Error).message },
