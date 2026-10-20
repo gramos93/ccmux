@@ -1,4 +1,6 @@
 import { describe, expect, it } from "bun:test";
+import { homedir } from "os";
+import { join } from "path";
 import {
   deriveTaskName,
   resolveTask,
@@ -103,6 +105,11 @@ describe("validateNewTask", () => {
   it("accepts the new-session target", () => {
     const task = validateNewTask({ ...base, target: "new-session" });
     expect(task.target).toBe("new-session");
+  });
+
+  it("expands a leading ~ in the project", () => {
+    const task = validateNewTask({ ...base, project: "~/Projects/x" });
+    expect(task.project).toBe(join(homedir(), "Projects/x"));
   });
 
   it("rejects an unknown target", () => {

@@ -11,6 +11,7 @@
  * resolver. No daemon, HTTP/SSE, TUI, or tmux spawning. See
  * `openspec/changes/add-task-store`.
  */
+import { expandHome } from "./config";
 
 /** Where a launched task's agent runs. `background` runs headlessly via the
  *  invoke subsystem (no pane). `new-session` launches into a dedicated tmux
@@ -165,7 +166,7 @@ export function validateNewTask(spec: Partial<TaskSpec>): TaskSpec {
   }
 
   return {
-    project,
+    project: expandHome(project),
     target,
     agent,
     prompt: prompt ?? "",

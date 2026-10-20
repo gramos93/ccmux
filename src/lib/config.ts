@@ -8,7 +8,7 @@ export const CLAUDE_DIR = join(homedir(), ".claude");
 export const PROJECTS_DIR = join(CLAUDE_DIR, "projects");
 
 /** Expand a leading `~` / `~/` to the user's home directory. */
-function expandHome(p: string): string {
+export function expandHome(p: string): string {
   if (p === "~") return homedir();
   if (p.startsWith("~/")) return join(homedir(), p.slice(2));
   return p;

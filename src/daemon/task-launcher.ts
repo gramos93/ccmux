@@ -18,6 +18,7 @@
  */
 import { existsSync, statSync } from "fs";
 import { basename } from "path";
+import { expandHome } from "../lib/config";
 import { stripAnsi } from "../lib/strip-ansi";
 import { getAgentExecutable, type AgentDef } from "../lib/agents";
 import type { Preferences } from "../lib/preferences";
@@ -290,10 +291,13 @@ export interface LaunchOpts {
  * `send-to-existing`, or a tmux failure.
  */
 export async function launchTask(
-  task: TaskInstance,
+  rawTask: TaskInstance,
   deps: TaskLauncherDeps,
   opts: LaunchOpts = {},
 ): Promise<LaunchResult> {
+  // A project saved with a literal `~` (TUI form, config keys, projectsRoot)
+  // must resolve to the home dir; tmux `-c` and existsSync don't expand it.
+  const task = { ...rawTask, project: expandHome(rawTask.project) };
   const now = deps.now ?? (() => Date.now());
   const sleep =
     deps.sleep ?? ((ms: number) => new Promise((r) => setTimeout(r, ms)));
